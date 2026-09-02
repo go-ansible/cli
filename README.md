@@ -1,7 +1,7 @@
 # cli
 
 CLI binaries: ansible-playbook, ansible, ansible-vault, ansible-galaxy,
-ansible-pull, ansible-doc.
+ansible-pull, ansible-doc, ansible-config.
 
 Part of [go-ansible](https://github.com/go-ansible) — a pure-Go (CGO=0),
 functional-parity port of [Ansible](https://www.ansible.com/).
