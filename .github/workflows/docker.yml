@@ -1,0 +1,56 @@
+name: docker
+
+# Builds and publishes a multi-arch OCI image bundling all six
+# go-ansible CLI binaries, FROM scratch (see Dockerfile). Runs on every
+# version tag and can be triggered manually.
+#
+# linux/loong64 is deliberately not in the platform list: it isn't a
+# platform docker buildx recognizes without extra QEMU/binfmt setup
+# this workflow doesn't do (verified locally — `docker buildx inspect`
+# lists amd64/arm64/riscv64/ppc64le/s390x/386 but not loong64) — rather
+# than guess whether GitHub's runners happen to support it, this ships
+# the five confirmed platforms and says so.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/go-ansible/cli
+          # Every trigger for this workflow (a version tag, or a manual
+          # dispatch) is a release — "latest" always follows it, there
+          # is no separate main-branch build to distinguish it from.
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/riscv64,linux/ppc64le,linux/s390x
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
