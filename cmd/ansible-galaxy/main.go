@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-ansible/cli/internal/version"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"gopkg.in/yaml.v3"
@@ -34,6 +35,10 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		fmt.Println(version.String("ansible-galaxy"))
+		return 0
+	}
 	if len(args) < 1 || args[0] != "install" {
 		usage()
 		return 2

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/modules"
 	"github.com/go-ansible/playbook"
@@ -31,6 +32,7 @@ func run(args []string) int {
 	fs.StringVar(moduleArgs, "args", "", "module arguments")
 	become := fs.Bool("b", false, "run with privilege escalation (also --become)")
 	fs.BoolVar(become, "become", false, "run with privilege escalation")
+	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ansible PATTERN -i INVENTORY -m MODULE [-a ARGS] [-b]")
 		fs.PrintDefaults()
@@ -48,6 +50,10 @@ func run(args []string) int {
 	}
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
+	}
+	if *showVersion {
+		fmt.Println(version.String("ansible"))
+		return 0
 	}
 	if *inventoryPath == "" || pattern == "" {
 		fs.Usage()

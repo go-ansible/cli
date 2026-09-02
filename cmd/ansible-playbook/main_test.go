@@ -215,3 +215,9 @@ func TestRunRoleResolvesRelativeToPlaybookFile(t *testing.T) {
 		t.Fatalf("exit = %d, want 0 (roles/ should resolve relative to the playbook file, not the cwd)", code)
 	}
 }
+
+func TestRunVersion(t *testing.T) {
+	if code := run([]string{"--version"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+}

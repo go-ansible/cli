@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/vault"
 	"golang.org/x/term"
 )
@@ -17,6 +18,10 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		fmt.Println(version.String("ansible-vault"))
+		return 0
+	}
 	if len(args) < 1 {
 		usage()
 		return 2

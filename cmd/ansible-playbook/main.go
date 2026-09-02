@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/report"
+	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
 )
@@ -38,12 +39,17 @@ func run(args []string) int {
 	fs.Var(&runTags, "tags", "only run tasks tagged with one of these tags (repeatable)")
 	fs.Var(&skipTags, "skip-tags", "skip tasks tagged with one of these tags (repeatable)")
 	noColor := fs.Bool("no-color", false, "disable colored output")
+	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *showVersion {
+		fmt.Println(version.String("ansible-playbook"))
+		return 0
 	}
 	if *inventoryPath == "" || fs.NArg() == 0 {
 		fs.Usage()

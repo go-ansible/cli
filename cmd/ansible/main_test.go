@@ -159,3 +159,9 @@ func TestRunInventoryError(t *testing.T) {
 		t.Fatalf("exit = %d, want 1", code)
 	}
 }
+
+func TestRunVersion(t *testing.T) {
+	if code := run([]string{"--version"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+}
