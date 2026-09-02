@@ -129,3 +129,89 @@ func TestRunExtraVarsApplied(t *testing.T) {
 		t.Fatalf("exit = %d, want 0 (extra var should have satisfied the when)", code)
 	}
 }
+
+func TestRunTagsSkipsUntaggedTask(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - name: should not run
+      tags: [never-selected]
+      fail:
+        msg: boom
+    - name: should run
+      tags: [selected]
+      debug: {}
+`)
+	code := run([]string{"-i", inv, "--tags", "selected", pb})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (the failing task should have been filtered out by --tags)", code)
+	}
+}
+
+func TestRunSkipTagsExcludesFailingTask(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - name: should be skipped
+      tags: [broken]
+      fail:
+        msg: boom
+`)
+	code := run([]string{"-i", inv, "--skip-tags", "broken", pb})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (the failing task should have been excluded by --skip-tags)", code)
+	}
+}
+
+func TestRunTagsCommaSeparatedWithinOneFlag(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - name: a
+      tags: [a]
+      debug: {}
+    - name: b
+      tags: [b]
+      debug: {}
+    - name: c
+      tags: [c]
+      fail:
+        msg: boom
+`)
+	code := run([]string{"-i", inv, "--tags", "a,b", pb})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (comma-separated --tags a,b should select a and b, excluding failing c)", code)
+	}
+}
+
+func TestRunRoleResolvesRelativeToPlaybookFile(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	if err := os.MkdirAll(filepath.Join(dir, "roles", "myrole", "tasks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "roles", "myrole", "tasks", "main.yml"), "- debug: {}\n")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  roles:
+    - myrole
+`)
+	code := run([]string{"-i", inv, pb})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (roles/ should resolve relative to the playbook file, not the cwd)", code)
+	}
+}

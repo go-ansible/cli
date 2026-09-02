@@ -3,9 +3,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	iofs "io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/report"
@@ -29,6 +33,10 @@ func run(args []string) int {
 	var extra stringList
 	fs.Var(&extra, "e", "extra variables: key=value, @file.yml, or a JSON object (repeatable, also --extra-vars)")
 	fs.Var(&extra, "extra-vars", "extra variables: key=value, @file.yml, or a JSON object (repeatable)")
+	var runTags, skipTags stringList
+	fs.Var(&runTags, "t", "only run tasks tagged with one of these tags (repeatable, also --tags)")
+	fs.Var(&runTags, "tags", "only run tasks tagged with one of these tags (repeatable)")
+	fs.Var(&skipTags, "skip-tags", "skip tasks tagged with one of these tags (repeatable)")
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
@@ -56,21 +64,22 @@ func run(args []string) int {
 
 	e := playbook.New(inv)
 	e.ExtraVars = vars
+	e.RunTags = splitTagList(runTags)
+	e.SkipTags = splitTagList(skipTags)
 	printer := report.NewPrinter(os.Stdout, !*noColor)
 	e.OnResult = printer.OnResult
 
 	failed := false
 	for _, path := range fs.Args() {
-		data, err := os.ReadFile(path)
+		pb, err := playbook.ParseFile(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
-			return 1
-		}
-		pb, err := playbook.Parse(data)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+			if errors.Is(err, iofs.ErrNotExist) {
+				return 1
+			}
 			return 4
 		}
+		e.BaseDir = filepath.Dir(path)
 		rr, err := e.RunPlaybook(context.Background(), pb)
 		if rr != nil {
 			report.Recap(os.Stdout, rr, !*noColor)
@@ -87,4 +96,20 @@ func run(args []string) int {
 		return 2
 	}
 	return 0
+}
+
+// splitTagList expands a repeatable --tags/--skip-tags flag into a flat
+// tag list, splitting each occurrence on commas too — real
+// ansible-playbook accepts both `--tags a --tags b` and `--tags a,b`.
+func splitTagList(raw []string) []string {
+	var out []string
+	for _, entry := range raw {
+		for _, tag := range strings.Split(entry, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				out = append(out, tag)
+			}
+		}
+	}
+	return out
 }
