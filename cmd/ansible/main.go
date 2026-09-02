@@ -4,18 +4,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
+	"github.com/go-ansible/cli/internal/adhoc"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
-	"github.com/go-ansible/modules"
-	"github.com/go-ansible/playbook"
-	remoteexec "github.com/go-remoteexec/transport"
 )
 
 func main() {
@@ -75,60 +71,13 @@ func run(args []string) int {
 		return 1
 	}
 
-	moduleArgsMap := parseModuleArgs(*moduleName, *moduleArgs)
-	registry := modules.Default()
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	anyFailed := false
-	ctx := context.Background()
-
-	for _, h := range hosts {
-		wg.Add(1)
-		go func(hostName string) {
-			defer wg.Done()
-			hostVars := inv.HostVars(hostName)
-
-			conn, err := playbook.DefaultConnect(ctx, hostName, hostVars)
-			if err != nil {
-				mu.Lock()
-				fmt.Printf("%s | UNREACHABLE => %s\n", hostName, err)
-				anyFailed = true
-				mu.Unlock()
-				return
-			}
-			defer conn.Close()
-
-			var target remoteexec.Connection = conn
-			if *become {
-				target = remoteexec.Become(conn, remoteexec.BecomeConfig{})
-			}
-
-			res, err := registry.Run(ctx, *moduleName, target, moduleArgsMap)
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				fmt.Printf("%s | UNREACHABLE => %s\n", hostName, err)
-				anyFailed = true
-				return
-			}
-			status := "SUCCESS"
-			if res.Failed {
-				status = "FAILED"
-				anyFailed = true
-			} else if res.Changed {
-				status = "SUCCESS (changed)"
-			}
-			payload := map[string]any{"changed": res.Changed, "msg": res.Msg}
-			for k, v := range res.Extra {
-				payload[k] = v
-			}
-			enc, _ := json.MarshalIndent(payload, "", "    ")
-			fmt.Printf("%s | %s => %s\n", hostName, status, enc)
-		}(h.Name)
+	moduleArgsMap := adhoc.ParseModuleArgs(*moduleName, *moduleArgs)
+	hostNames := make([]string, len(hosts))
+	for i, h := range hosts {
+		hostNames[i] = h.Name
 	}
-	wg.Wait()
 
+	anyFailed := adhoc.Run(context.Background(), inv, hostNames, *moduleName, moduleArgsMap, *become, os.Stdout)
 	if anyFailed {
 		return 2
 	}
@@ -169,24 +118,4 @@ func extractPattern(args []string) (pattern string, flagArgs []string, err error
 		pattern = a
 	}
 	return pattern, flagArgs, nil
-}
-
-// parseModuleArgs builds a module's argument map from the -a string.
-// command/shell (and any module taking a single free-form string) get
-// the whole string as _raw_params; every other module parses it as
-// space-separated key=value pairs, Ansible's ad-hoc convention.
-func parseModuleArgs(module, argsStr string) map[string]any {
-	switch module {
-	case "command", "shell":
-		return map[string]any{"_raw_params": argsStr}
-	}
-	out := map[string]any{}
-	for _, pair := range strings.Fields(argsStr) {
-		key, val, ok := strings.Cut(pair, "=")
-		if !ok {
-			continue
-		}
-		out[key] = val
-	}
-	return out
 }

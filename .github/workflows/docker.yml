@@ -1,6 +1,6 @@
 name: docker
 
-# Builds and publishes a multi-arch OCI image bundling all six
+# Builds and publishes a multi-arch OCI image bundling all eight
 # go-ansible CLI binaries, FROM scratch (see Dockerfile). Runs on every
 # version tag and can be triggered manually.
 #
