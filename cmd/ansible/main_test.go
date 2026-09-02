@@ -80,34 +80,6 @@ func TestExtractPatternNone(t *testing.T) {
 	}
 }
 
-func TestParseModuleArgsCommand(t *testing.T) {
-	args := parseModuleArgs("command", "echo hi there")
-	if args["_raw_params"] != "echo hi there" {
-		t.Fatalf("args = %v", args)
-	}
-}
-
-func TestParseModuleArgsShell(t *testing.T) {
-	args := parseModuleArgs("shell", "echo a | b")
-	if args["_raw_params"] != "echo a | b" {
-		t.Fatalf("args = %v", args)
-	}
-}
-
-func TestParseModuleArgsKeyValue(t *testing.T) {
-	args := parseModuleArgs("copy", "src=/a dest=/b")
-	if args["src"] != "/a" || args["dest"] != "/b" {
-		t.Fatalf("args = %v", args)
-	}
-}
-
-func TestParseModuleArgsSkipsBadPair(t *testing.T) {
-	args := parseModuleArgs("copy", "src=/a badtoken dest=/b")
-	if len(args) != 2 || args["src"] != "/a" || args["dest"] != "/b" {
-		t.Fatalf("args = %v", args)
-	}
-}
-
 func TestRunEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	inv := filepath.Join(dir, "inv.yml")

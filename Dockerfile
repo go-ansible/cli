@@ -24,7 +24,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN mkdir /out && \
-    for bin in ansible ansible-playbook ansible-vault ansible-galaxy ansible-pull ansible-doc ansible-config; do \
+    for bin in ansible ansible-playbook ansible-vault ansible-galaxy ansible-pull ansible-doc ansible-config ansible-console; do \
       CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
         go build -trimpath -ldflags="-s -w" -o /out/$bin ./cmd/$bin; \
     done

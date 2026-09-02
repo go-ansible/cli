@@ -1,7 +1,7 @@
 # cli
 
 CLI binaries: ansible-playbook, ansible, ansible-vault, ansible-galaxy,
-ansible-pull, ansible-doc, ansible-config.
+ansible-pull, ansible-doc, ansible-config, ansible-console.
 
 Part of [go-ansible](https://github.com/go-ansible) — a pure-Go (CGO=0),
 functional-parity port of [Ansible](https://www.ansible.com/).
@@ -12,7 +12,7 @@ functional-parity port of [Ansible](https://www.ansible.com/).
 
 ## Docker / OCI image
 
-Every tagged release publishes a multi-arch image bundling all six
+Every tagged release publishes a multi-arch image bundling all eight
 binaries, `FROM scratch` — no libc, no interpreter, nothing but the
 static binaries themselves (real Ansible cannot do this: it needs
 Python plus several pip-installed packages just to be the controller;
