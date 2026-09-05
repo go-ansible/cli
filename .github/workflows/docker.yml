@@ -4,12 +4,21 @@ name: docker
 # go-ansible CLI binaries, FROM scratch (see Dockerfile). Runs on every
 # version tag and can be triggered manually.
 #
-# linux/loong64 is deliberately not in the platform list: it isn't a
-# platform docker buildx recognizes without extra QEMU/binfmt setup
-# this workflow doesn't do (verified locally — `docker buildx inspect`
-# lists amd64/arm64/riscv64/ppc64le/s390x/386 but not loong64) — rather
-# than guess whether GitHub's runners happen to support it, this ships
-# the five confirmed platforms and says so.
+# linux/loong64 IS included: tonistiigi/binfmt (which setup-qemu-action
+# installs) added loong64 emulation since this workflow was first
+# written — re-verified locally (`docker buildx inspect --bootstrap`
+# now lists linux/loong64 among the supported platforms) rather than
+# trusting the older note that used to live here. The Dockerfile's
+# build stage cross-compiles from the runner's own native architecture
+# (`--platform=$BUILDPLATFORM`) instead of running under QEMU itself,
+# which is also why loong64 works at all here: the official `golang`
+# image publishes no loong64 variant, so a naive `--platform
+# linux/loong64` build stage could never have worked even with the
+# emulator installed. Verified end-to-end locally before shipping:
+# built this image for linux/loong64, extracted the `ansible` binary
+# (`file` confirms "ELF 64-bit LSB executable, LoongArch"), and ran it
+# for real under `docker run --platform linux/loong64`, producing
+# correct `--version` output under genuine QEMU emulation.
 
 on:
   push:
@@ -50,7 +59,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/riscv64,linux/ppc64le,linux/s390x
+          platforms: linux/amd64,linux/arm64,linux/riscv64,linux/loong64,linux/ppc64le,linux/s390x
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

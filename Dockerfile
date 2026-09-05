@@ -13,10 +13,21 @@
 # TARGET's, not this image's.
 #
 # Build with docker buildx for multi-arch:
-#   docker buildx build --platform linux/amd64,linux/arm64,linux/riscv64,linux/ppc64le,linux/s390x -t IMAGE .
+#   docker buildx build --platform linux/amd64,linux/arm64,linux/riscv64,linux/loong64,linux/ppc64le,linux/s390x -t IMAGE .
 # TARGETOS/TARGETARCH are supplied automatically by buildx per platform.
-
-FROM golang:1.26 AS build
+#
+# The build stage is pinned to --platform=$BUILDPLATFORM (the runner's
+# own native architecture, not the target one) deliberately: it cross-
+# compiles via GOOS/GOARCH instead of running the Go toolchain itself
+# under QEMU emulation for every target. This isn't just a speed
+# optimization — it's required for linux/loong64, since the official
+# golang image publishes no loong64 manifest at all (confirmed via
+# `docker manifest inspect golang:1.26`), so buildx could never pull a
+# native-loong64 build stage even with QEMU installed. Cross-compiling
+# from the host's own architecture sidesteps that entirely: only the
+# empty `scratch` final stage is tagged as the target platform, which
+# has no architecture-specific content to need a manifest for.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
