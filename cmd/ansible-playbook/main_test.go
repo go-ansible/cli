@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -219,5 +220,33 @@ func TestRunRoleResolvesRelativeToPlaybookFile(t *testing.T) {
 func TestRunVersion(t *testing.T) {
 	if code := run([]string{"--version"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
+	}
+}
+
+// TestRunForksFlagLimitsConcurrency proves --forks actually reaches
+// Engine.Forks through this real CLI entrypoint (not just the library
+// API playbook's own tests exercise), using real wall-clock timing
+// like those tests: 4 hosts each sleep 200ms; --forks 2 can only
+// overlap two at a time, so the whole run takes at least two
+// sequential rounds (~400ms).
+func TestRunForksFlagLimitsConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n"+
+		"    h1:\n      ansible_connection: local\n"+
+		"    h2:\n      ansible_connection: local\n"+
+		"    h3:\n      ansible_connection: local\n"+
+		"    h4:\n      ansible_connection: local\n")
+	writeFile(t, pb, "- hosts: all\n  gather_facts: false\n  tasks:\n    - command: sleep 0.2\n")
+
+	start := time.Now()
+	code := run([]string{"-i", inv, "--forks", "2", pb})
+	elapsed := time.Since(start)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if elapsed < 350*time.Millisecond {
+		t.Fatalf("elapsed = %v, want >= ~400ms (2 sequential rounds of 4 hosts at --forks 2) — the flag doesn't appear to reach Engine.Forks", elapsed)
 	}
 }
