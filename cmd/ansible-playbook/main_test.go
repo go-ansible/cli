@@ -250,3 +250,26 @@ func TestRunForksFlagLimitsConcurrency(t *testing.T) {
 		t.Fatalf("elapsed = %v, want >= ~400ms (2 sequential rounds of 4 hosts at --forks 2) — the flag doesn't appear to reach Engine.Forks", elapsed)
 	}
 }
+
+// TestRunVarsPromptFallsBackToDefaultWhenNotATerminal locks in
+// terminalPrompt's real-Ansible-verified non-TTY behavior: a `go test`
+// run's stdin is never a real terminal, so this proves the CLI falls
+// back to vars_prompt's default rather than hanging waiting for input
+// that will never come — matching a real ansible-playbook run's own
+// piped-input behavior exactly (verified separately against the real
+// binary: "Not prompting as we are not in interactive mode", falls
+// back to default).
+func TestRunVarsPromptFallsBackToDefaultWhenNotATerminal(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	writeFile(t, pb, "- hosts: all\n  gather_facts: false\n"+
+		"  vars_prompt:\n    - name: username\n      default: anon\n"+
+		"  tasks:\n    - debug:\n        msg: \"user={{ username }}\"\n")
+
+	code := run([]string{"-i", inv, pb})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+}

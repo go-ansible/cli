@@ -2,10 +2,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
+	"golang.org/x/term"
 )
 
 type stringList []string
@@ -81,6 +84,7 @@ func run(args []string) int {
 	e.ExtraVars = vars
 	e.RunTags = splitTagList(runTags)
 	e.SkipTags = splitTagList(skipTags)
+	e.Prompt = terminalPrompt
 	printer := report.NewPrinter(os.Stdout, !*noColor)
 	e.OnResult = printer.OnResult
 
@@ -111,6 +115,35 @@ func run(args []string) int {
 		return 2
 	}
 	return 0
+}
+
+// terminalPrompt is playbook.Engine's real, interactive Prompt
+// implementation — the library's own default (playbook.defaultPrompt)
+// deliberately has no terminal awareness at all. Matches real
+// ansible-playbook's own do_var_prompt: not a TTY at all means don't
+// even try to read (an empty result, so vars_prompt falls back to
+// Default), and a private prompt hides the typed characters via
+// term.ReadPassword rather than echoing them.
+func terminalPrompt(msg string, private bool) (string, error) {
+	fmt.Fprint(os.Stderr, msg)
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "[WARNING]: Not prompting as we are not in interactive mode")
+		return "", nil
+	}
+	if private {
+		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", err
+		}
+		return string(pw), nil
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 // splitTagList expands a repeatable --tags/--skip-tags flag into a flat
