@@ -86,3 +86,48 @@ func TestRunDumpShowsEnvOverrideOrigin(t *testing.T) {
 		t.Fatalf("dump output = %q, want timeout attributed to its env var", out)
 	}
 }
+
+// isolateConfigDiscovery points cwd/$HOME at fresh temp dirs and clears
+// $ANSIBLE_CONFIG, so a test asserting on a real ansible.cfg it writes
+// can't pick up something unrelated on the machine actually running it.
+func isolateConfigDiscovery(t *testing.T) {
+	t.Helper()
+	t.Setenv("ANSIBLE_CONFIG", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+}
+
+func TestRunViewPrintsRealConfigFile(t *testing.T) {
+	isolateConfigDiscovery(t)
+	if err := os.WriteFile("ansible.cfg", []byte("[defaults]\nremote_user = cfguser\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	out := captureStdout(t, func() { code = run([]string{"view"}) })
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out, "remote_user = cfguser") {
+		t.Fatalf("view output = %q, want the real file's content", out)
+	}
+}
+
+func TestRunDumpShowsConfigFileOrigin(t *testing.T) {
+	isolateConfigDiscovery(t)
+	if err := os.WriteFile("ansible.cfg", []byte("[defaults]\nremote_user = cfguser\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	out := captureStdout(t, func() { code = run([]string{"dump"}) })
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out, "remote_user(cfg: ") || !strings.Contains(out, "= cfguser") {
+		t.Fatalf("dump output = %q, want remote_user attributed to the config file", out)
+	}
+	// A setting the file doesn't set must NOT be attributed to the file
+	// just because one exists — real regression this test locks in.
+	if !strings.Contains(out, "timeout(default) = 10") {
+		t.Fatalf("dump output = %q, want timeout still at its default (the file doesn't set it)", out)
+	}
+}
