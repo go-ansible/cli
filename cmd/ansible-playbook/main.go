@@ -38,6 +38,12 @@ func run(args []string) int {
 	fs.Var(&runTags, "t", "only run tasks tagged with one of these tags (repeatable, also --tags)")
 	fs.Var(&runTags, "tags", "only run tasks tagged with one of these tags (repeatable)")
 	fs.Var(&skipTags, "skip-tags", "skip tasks tagged with one of these tags (repeatable)")
+	// -1 (not a valid real fork count) means "not given" — playbook.New
+	// already applies the real default (5, or ANSIBLE_FORKS) before
+	// this flag is even parsed, and inv isn't available yet to
+	// construct that Engine here to read its own default back out.
+	forks := fs.Int("f", -1, "number of parallel processes to use (also --forks)")
+	fs.IntVar(forks, "forks", -1, "number of parallel processes to use")
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
@@ -69,6 +75,9 @@ func run(args []string) int {
 	}
 
 	e := playbook.New(inv)
+	if *forks >= 0 {
+		e.Forks = *forks
+	}
 	e.ExtraVars = vars
 	e.RunTags = splitTagList(runTags)
 	e.SkipTags = splitTagList(skipTags)
