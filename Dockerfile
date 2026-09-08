@@ -27,7 +27,7 @@
 # from the host's own architecture sidesteps that entirely: only the
 # empty `scratch` final stage is tagged as the target platform, which
 # has no architecture-specific content to need a manifest for.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
