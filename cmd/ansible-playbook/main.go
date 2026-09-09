@@ -52,14 +52,15 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	playbooks, err := parseInterspersed(fs, args)
+	if err != nil {
 		return 2
 	}
 	if *showVersion {
 		fmt.Println(version.String("ansible-playbook"))
 		return 0
 	}
-	if *inventoryPath == "" || fs.NArg() == 0 {
+	if *inventoryPath == "" || len(playbooks) == 0 {
 		fs.Usage()
 		return 2
 	}
@@ -87,7 +88,7 @@ func run(args []string) int {
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed := false
-	for _, path := range fs.Args() {
+	for _, path := range playbooks {
 		pb, err := playbook.ParseFile(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
@@ -139,6 +140,29 @@ func terminalPrompt(msg string, private bool) (string, error) {
 		return "", err
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// parseInterspersed parses args allowing flags to appear after positional
+// arguments, and returns the positionals. Real ansible-playbook is a
+// Python argparse program, where `ansible-playbook site.yml -e k=v` is an
+// ordinary invocation; Go's flag package stops at the first non-flag, so
+// it took `-e` for a second playbook path and failed on it. Parsing is
+// resumed after each positional instead, which is exactly what argparse
+// does and keeps repeatable flags (-e, --tags) accumulating across the
+// whole command line.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			return positional, nil
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
+	}
 }
 
 // splitTagList expands a repeatable --tags/--skip-tags flag into a flat
