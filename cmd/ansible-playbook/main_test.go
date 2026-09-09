@@ -273,3 +273,55 @@ func TestRunVarsPromptFallsBackToDefaultWhenNotATerminal(t *testing.T) {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 }
+
+// TestRunFlagsAfterPlaybook covers the invocation form real
+// ansible-playbook accepts and this command used to reject: flags placed
+// after the playbook path. Real ansible-playbook is an argparse program,
+// so `ansible-playbook site.yml -e k=v` is ordinary; Go's flag package
+// stops at the first non-flag, and `-e` was taken for a second playbook.
+func TestRunFlagsAfterPlaybook(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - name: check
+      fail:
+        msg: "got {{ x }}"
+      when: x != "expected"
+`)
+	if code := run([]string{"-i", inv, pb, "-e", "x=expected"}); code != 0 {
+		t.Errorf("flags after the playbook: exit = %d, want 0", code)
+	}
+	// And the fully-trailing form, with the inventory after it too.
+	if code := run([]string{pb, "-i", inv, "-e", "x=expected"}); code != 0 {
+		t.Errorf("playbook first: exit = %d, want 0", code)
+	}
+}
+
+// TestRunMultiplePlaybooksWithInterspersedFlags pins that resuming the
+// parse after each positional still collects every playbook.
+func TestRunMultiplePlaybooksWithInterspersedFlags(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	marker := filepath.Join(dir, "second-ran.txt")
+	first := filepath.Join(dir, "first.yml")
+	second := filepath.Join(dir, "second.yml")
+	writeFile(t, first, "- hosts: all\n  gather_facts: false\n  tasks: []\n")
+	writeFile(t, second, `- hosts: all
+  gather_facts: false
+  tasks:
+    - copy:
+        content: ran
+        dest: `+marker+"\n")
+
+	if code := run([]string{"-i", inv, first, "-e", "x=1", second}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("second playbook did not run: %v", err)
+	}
+}
