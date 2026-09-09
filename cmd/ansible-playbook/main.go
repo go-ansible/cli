@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/go-ansible/cli/internal/extravars"
-	"github.com/go-ansible/cli/internal/report"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
@@ -85,8 +84,7 @@ func run(args []string) int {
 	e.RunTags = splitTagList(runTags)
 	e.SkipTags = splitTagList(skipTags)
 	e.Prompt = terminalPrompt
-	printer := report.NewPrinter(os.Stdout, !*noColor)
-	e.OnResult = printer.OnResult
+	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed := false
 	for _, path := range fs.Args() {
@@ -100,9 +98,6 @@ func run(args []string) int {
 		}
 		e.BaseDir = filepath.Dir(path)
 		rr, err := e.RunPlaybook(context.Background(), pb)
-		if rr != nil {
-			report.Recap(os.Stdout, rr, !*noColor)
-		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
 			return 1
