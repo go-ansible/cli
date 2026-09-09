@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 
 	"github.com/go-ansible/cli/internal/extravars"
-	"github.com/go-ansible/cli/internal/report"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
@@ -97,13 +96,9 @@ func run(args []string) int {
 	e := playbook.New(inv)
 	e.ExtraVars = extra
 	e.BaseDir = dest
-	printer := report.NewPrinter(os.Stdout, !opts.noColor)
-	e.OnResult = printer.OnResult
+	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !opts.noColor)}
 
 	rr, runErr := e.RunPlaybook(context.Background(), pb)
-	if rr != nil {
-		report.Recap(os.Stdout, rr, !opts.noColor)
-	}
 
 	code := 0
 	if runErr != nil {
