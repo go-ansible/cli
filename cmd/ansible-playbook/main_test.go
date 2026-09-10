@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/go-ansible/vault"
 	"os"
 	"path/filepath"
 	"testing"
@@ -323,5 +324,62 @@ func TestRunMultiplePlaybooksWithInterspersedFlags(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("second playbook did not run: %v", err)
+	}
+}
+
+// TestRunVaultPasswordFile covers an encrypted vars_files target and an
+// encrypted group_vars file in one run. ansible-playbook had no vault
+// flag at all, so neither could be read.
+func TestRunVaultPasswordFile(t *testing.T) {
+	dir := t.TempDir()
+	pw := filepath.Join(dir, "pw.txt")
+	writeFile(t, pw, "correct horse\n")
+
+	enc := func(rel, plaintext string) {
+		t.Helper()
+		text, err := vault.Encrypt([]byte(plaintext), "correct horse", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, full, text)
+	}
+
+	writeFile(t, filepath.Join(dir, "inv.yml"),
+		"all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	enc("group_vars/all.yml", "gv: from_group_vars\n")
+	enc("secrets.yml", "vf: from_vars_file\n")
+
+	out := filepath.Join(dir, "out.txt")
+	writeFile(t, filepath.Join(dir, "site.yml"), `- hosts: all
+  gather_facts: false
+  vars_files: [secrets.yml]
+  tasks:
+    - copy: {content: "{{ vf }}/{{ gv }}", dest: `+out+`}
+`)
+
+	// The password file is stripped of its trailing newline; without it
+	// the run must fail with a vault error rather than a YAML crash.
+	if code := run([]string{"-i", filepath.Join(dir, "inv.yml"), filepath.Join(dir, "site.yml")}); code == 0 {
+		t.Error("encrypted files with no --vault-password-file: exit 0, want a failure")
+	}
+
+	code := run([]string{
+		"-i", filepath.Join(dir, "inv.yml"),
+		"--vault-password-file", pw,
+		filepath.Join(dir, "site.yml"),
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "from_vars_file/from_group_vars" {
+		t.Errorf("rendered = %q, want %q", got, "from_vars_file/from_group_vars")
 	}
 }

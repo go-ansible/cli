@@ -3,14 +3,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"github.com/go-ansible/cli/internal/vaultpw"
 	"os"
 	"strings"
 
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/vault"
-	"golang.org/x/term"
 )
 
 func main() {
@@ -94,32 +93,7 @@ func parseVaultFlags(args []string) (pwFile, vaultID string, files []string, err
 	return pwFile, vaultID, files, nil
 }
 
-func resolvePassword(pwFile string) (string, error) {
-	if pwFile != "" {
-		data, err := os.ReadFile(pwFile)
-		if err != nil {
-			return "", fmt.Errorf("reading vault password file: %w", err)
-		}
-		return strings.TrimRight(string(data), "\n"), nil
-	}
-	if env := os.Getenv("ANSIBLE_VAULT_PASSWORD"); env != "" {
-		return env, nil
-	}
-	fmt.Fprint(os.Stderr, "Vault password: ")
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", fmt.Errorf("reading password: %w", err)
-		}
-		return string(pw), nil
-	}
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("reading password: %w", err)
-	}
-	return strings.TrimRight(line, "\n"), nil
-}
+func resolvePassword(pwFile string) (string, error) { return vaultpw.Resolve(pwFile) }
 
 func encryptFiles(files []string, password, vaultID string) int {
 	code := 0
