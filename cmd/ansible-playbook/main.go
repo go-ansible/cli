@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/go-ansible/cli/internal/vaultpw"
 	"io"
 	iofs "io/fs"
 	"os"
@@ -47,6 +48,10 @@ func run(args []string) int {
 	forks := fs.Int("f", -1, "number of parallel processes to use (also --forks)")
 	fs.IntVar(forks, "forks", -1, "number of parallel processes to use")
 	noColor := fs.Bool("no-color", false, "disable colored output")
+	vaultPasswordFile := fs.String("vault-password-file", "", "read the vault password from this file (also --vault-pass-file)")
+	fs.StringVar(vaultPasswordFile, "vault-pass-file", "", "read the vault password from this file")
+	askVaultPass := fs.Bool("ask-vault-password", false, "prompt for the vault password (also --ask-vault-pass)")
+	fs.BoolVar(askVaultPass, "ask-vault-pass", false, "prompt for the vault password")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
@@ -65,7 +70,20 @@ func run(args []string) int {
 		return 2
 	}
 
-	inv, err := inventory.Load(*inventoryPath)
+	// The password is resolved before anything is read, because the
+	// inventory itself may be encrypted. It is only asked for when the
+	// caller said one exists — otherwise a plaintext run would stop to
+	// prompt for a password nothing needs.
+	var vaultPassword string
+	if *vaultPasswordFile != "" || *askVaultPass {
+		vaultPassword, err = vaultpw.Resolve(*vaultPasswordFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+			return 1
+		}
+	}
+
+	inv, err := inventory.LoadWithVault(*inventoryPath, vaultPassword)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
 		return 1
@@ -85,11 +103,12 @@ func run(args []string) int {
 	e.RunTags = splitTagList(runTags)
 	e.SkipTags = splitTagList(skipTags)
 	e.Prompt = terminalPrompt
+	e.VaultPassword = vaultPassword
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed := false
 	for _, path := range playbooks {
-		pb, err := playbook.ParseFile(path)
+		pb, err := playbook.ParseFileWithVault(path, vaultPassword)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
 			if errors.Is(err, iofs.ErrNotExist) {
