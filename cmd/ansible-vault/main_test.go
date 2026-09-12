@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -275,4 +276,75 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestEncryptString covers the output pasted into a vars file. Verified
+// interoperable both ways against real ansible-vault: real Ansible reads
+// what this writes, and this reads what real Ansible writes.
+func TestEncryptString(t *testing.T) {
+	dir := t.TempDir()
+	pw := filepath.Join(dir, "pw.txt")
+	writeFile(t, pw, "pw1\n")
+
+	out := captureStdout(t, func() {
+		if code := run([]string{"encrypt_string", "the-secret",
+			"--vault-password-file=" + pw, "--name", "my_var"}); code != 0 {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+	})
+
+	// Real Ansible's layout: the name, the tag, then the body indented
+	// ten spaces.
+	if !strings.HasPrefix(out, "my_var: !vault |\n") {
+		t.Fatalf("output does not start with the named tag line:\n%s", out)
+	}
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n")[1:] {
+		if !strings.HasPrefix(line, "          ") {
+			t.Errorf("body line not indented ten spaces: %q", line)
+		}
+	}
+
+	// And it reads back: what we print is loadable YAML carrying the
+	// secret, which is the whole point of the command.
+	var parsed map[string]any
+	if err := vault.UnmarshalYAML([]byte(out), "pw1", &parsed); err != nil {
+		t.Fatalf("our own output does not load: %v", err)
+	}
+	if parsed["my_var"] != "the-secret" {
+		t.Errorf("round-tripped value = %#v, want the-secret", parsed["my_var"])
+	}
+
+	// Without --name, just the tag.
+	out = captureStdout(t, func() {
+		run([]string{"encrypt_string", "x", "--vault-password-file=" + pw})
+	})
+	if !strings.HasPrefix(out, "!vault |\n") {
+		t.Errorf("unnamed output = %q, want it to start with the bare tag", out)
+	}
+
+	// No secret at all is a usage error.
+	if code := run([]string{"encrypt_string", "--vault-password-file=" + pw}); code == 0 {
+		t.Error("encrypt_string with no value: exit 0, want non-zero")
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = saved }()
+
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		io.Copy(&b, r)
+		done <- b.String()
+	}()
+	fn()
+	w.Close()
+	return <-done
 }

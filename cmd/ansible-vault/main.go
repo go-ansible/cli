@@ -27,6 +27,13 @@ func run(args []string) int {
 	}
 	sub, rest := args[0], args[1:]
 
+	// encrypt_string takes its secrets as positional arguments and a
+	// --name, so it parses its own flags rather than treating every
+	// positional as a file path.
+	if sub == "encrypt_string" {
+		return encryptString(rest)
+	}
+
 	pwFile, vaultID, newPwFile, files, err := parseVaultFlagsFull(rest)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
@@ -72,7 +79,8 @@ func usage() {
   ansible-vault encrypt FILE [FILE2 ...] --vault-password-file=PATH [--vault-id=NAME]
   ansible-vault decrypt FILE [FILE2 ...] --vault-password-file=PATH
   ansible-vault view FILE --vault-password-file=PATH
-  ansible-vault rekey FILE [FILE2 ...] --vault-password-file=PATH --new-vault-password-file=PATH`)
+  ansible-vault rekey FILE [FILE2 ...] --vault-password-file=PATH --new-vault-password-file=PATH
+  ansible-vault encrypt_string SECRET [SECRET2 ...] --vault-password-file=PATH [--name NAME]`)
 }
 
 // parseVaultFlags does minimal hand-rolled flag parsing (--flag=value
@@ -234,4 +242,84 @@ func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
 		fmt.Println("Rekey successful")
 	}
 	return code
+}
+
+// encryptString implements `ansible-vault encrypt_string`, which prints a
+// !vault-tagged YAML scalar for pasting into an otherwise-readable vars
+// file rather than encrypting a file in place.
+//
+// The layout is real Ansible's, measured from its own output: the body is
+// indented ten spaces under the tag, and --name prefixes it with
+// "NAME: ". Reading one back is vault.UnmarshalYAML's job, and that
+// landed first on purpose — writing something this ecosystem could not
+// read would be worse than not writing it.
+func encryptString(args []string) int {
+	var pwFile, vaultID, name string
+	var secrets []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		next := func(flag string) (string, bool) {
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "ansible-vault: %s requires a value\n", flag)
+				return "", false
+			}
+			return args[i], true
+		}
+		switch {
+		case strings.HasPrefix(a, "--vault-password-file="):
+			pwFile = strings.TrimPrefix(a, "--vault-password-file=")
+		case a == "--vault-password-file":
+			v, ok := next(a)
+			if !ok {
+				return 2
+			}
+			pwFile = v
+		case strings.HasPrefix(a, "--vault-id="):
+			vaultID = strings.TrimPrefix(a, "--vault-id=")
+		case a == "--vault-id":
+			v, ok := next(a)
+			if !ok {
+				return 2
+			}
+			vaultID = v
+		case strings.HasPrefix(a, "--name="):
+			name = strings.TrimPrefix(a, "--name=")
+		case a == "--name" || a == "-n":
+			v, ok := next(a)
+			if !ok {
+				return 2
+			}
+			name = v
+		default:
+			secrets = append(secrets, a)
+		}
+	}
+	if len(secrets) == 0 {
+		fmt.Fprintln(os.Stderr, "ansible-vault: encrypt_string needs a value to encrypt")
+		return 2
+	}
+
+	password, err := vaultpw.Resolve(pwFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		return 1
+	}
+
+	for _, secret := range secrets {
+		text, err := vault.Encrypt([]byte(secret), password, vaultID)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			return 1
+		}
+		if name != "" {
+			fmt.Printf("%s: !vault |\n", name)
+		} else {
+			fmt.Println("!vault |")
+		}
+		for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+			fmt.Printf("          %s\n", line)
+		}
+	}
+	return 0
 }
