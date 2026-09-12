@@ -27,7 +27,7 @@ func run(args []string) int {
 	}
 	sub, rest := args[0], args[1:]
 
-	pwFile, vaultID, files, err := parseVaultFlags(rest)
+	pwFile, vaultID, newPwFile, files, err := parseVaultFlagsFull(rest)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
 		return 2
@@ -50,6 +50,17 @@ func run(args []string) int {
 		return decryptFiles(files, password)
 	case "view":
 		return viewFile(files, password)
+	case "rekey":
+		if newPwFile == "" {
+			fmt.Fprintln(os.Stderr, "ansible-vault: rekey requires --new-vault-password-file")
+			return 2
+		}
+		newPassword, err := vaultpw.Resolve(newPwFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			return 1
+		}
+		return rekeyFiles(files, password, newPassword, vaultID)
 	default:
 		usage()
 		return 2
@@ -60,13 +71,21 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   ansible-vault encrypt FILE [FILE2 ...] --vault-password-file=PATH [--vault-id=NAME]
   ansible-vault decrypt FILE [FILE2 ...] --vault-password-file=PATH
-  ansible-vault view FILE --vault-password-file=PATH`)
+  ansible-vault view FILE --vault-password-file=PATH
+  ansible-vault rekey FILE [FILE2 ...] --vault-password-file=PATH --new-vault-password-file=PATH`)
 }
 
 // parseVaultFlags does minimal hand-rolled flag parsing (--flag=value
 // or --flag value) so file arguments can be interleaved naturally,
 // matching how ansible-vault itself is invoked.
 func parseVaultFlags(args []string) (pwFile, vaultID string, files []string, err error) {
+	pwFile, vaultID, _, files, err = parseVaultFlagsFull(args)
+	return pwFile, vaultID, files, err
+}
+
+// parseVaultFlagsFull also returns --new-vault-password-file, which only
+// rekey uses.
+func parseVaultFlagsFull(args []string) (pwFile, vaultID, newPwFile string, files []string, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -75,22 +94,30 @@ func parseVaultFlags(args []string) (pwFile, vaultID string, files []string, err
 		case a == "--vault-password-file":
 			i++
 			if i >= len(args) {
-				return "", "", nil, fmt.Errorf("--vault-password-file requires a value")
+				return "", "", "", nil, fmt.Errorf("--vault-password-file requires a value")
 			}
 			pwFile = args[i]
+		case strings.HasPrefix(a, "--new-vault-password-file="):
+			newPwFile = strings.TrimPrefix(a, "--new-vault-password-file=")
+		case a == "--new-vault-password-file":
+			i++
+			if i >= len(args) {
+				return "", "", "", nil, fmt.Errorf("--new-vault-password-file requires a value")
+			}
+			newPwFile = args[i]
 		case strings.HasPrefix(a, "--vault-id="):
 			vaultID = strings.TrimPrefix(a, "--vault-id=")
 		case a == "--vault-id":
 			i++
 			if i >= len(args) {
-				return "", "", nil, fmt.Errorf("--vault-id requires a value")
+				return "", "", "", nil, fmt.Errorf("--vault-id requires a value")
 			}
 			vaultID = args[i]
 		default:
 			files = append(files, a)
 		}
 	}
-	return pwFile, vaultID, files, nil
+	return pwFile, vaultID, newPwFile, files, nil
 }
 
 func resolvePassword(pwFile string) (string, error) { return vaultpw.Resolve(pwFile) }
@@ -167,4 +194,44 @@ func viewFile(files []string, password string) int {
 	}
 	os.Stdout.Write(plain)
 	return 0
+}
+
+// rekeyFiles re-encrypts each file under a new password: decrypt with the
+// old one, encrypt with the new. A file that is not encrypted at all is an
+// error rather than a silent encrypt, since rekey means "change the
+// password on this", and quietly encrypting a plaintext file is not that.
+func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
+	code := 0
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			code = 1
+			continue
+		}
+		if !vault.IsVault(data) {
+			fmt.Fprintf(os.Stderr, "ansible-vault: %s is not encrypted\n", path)
+			code = 1
+			continue
+		}
+		plain, err := vault.Decrypt(string(data), oldPassword)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ansible-vault: %s: %v\n", path, err)
+			code = 1
+			continue
+		}
+		text, err := vault.Encrypt(plain, newPassword, vaultID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ansible-vault: %s: %v\n", path, err)
+			code = 1
+			continue
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			code = 1
+			continue
+		}
+		fmt.Println("Rekey successful")
+	}
+	return code
 }

@@ -203,3 +203,76 @@ func TestRunVersion(t *testing.T) {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 }
+
+// TestRekey covers changing a file's password. Verified interoperable
+// both ways against real ansible-vault: each tool reads what the other
+// rekeyed.
+func TestRekey(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.txt")
+	newp := filepath.Join(dir, "new.txt")
+	writeFile(t, old, "pw1\n")
+	writeFile(t, newp, "pw2\n")
+
+	secret := filepath.Join(dir, "s.yml")
+	enc, err := vault.Encrypt([]byte("k: v\n"), "pw1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, secret, enc)
+
+	if code := run([]string{"rekey", secret,
+		"--vault-password-file=" + old, "--new-vault-password-file=" + newp}); code != 0 {
+		t.Fatalf("rekey exit = %d, want 0", code)
+	}
+
+	data, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vault.IsVault(data) {
+		t.Fatal("rekeyed file is no longer vault-encrypted")
+	}
+	plain, err := vault.Decrypt(string(data), "pw2")
+	if err != nil {
+		t.Fatalf("new password does not open it: %v", err)
+	}
+	if string(plain) != "k: v\n" {
+		t.Errorf("content = %q, want it preserved", plain)
+	}
+	// The old password must no longer open it.
+	if _, err := vault.Decrypt(string(data), "pw1"); err == nil {
+		t.Error("the old password still opens the file")
+	}
+}
+
+// TestRekeyRefusesPlaintextAndMissingFlag guards the two ways rekey can
+// be asked for something it should not do. Encrypting a plaintext file
+// is not "changing its password", and real ansible-vault exits non-zero
+// for it too.
+func TestRekeyRefusesPlaintextAndMissingFlag(t *testing.T) {
+	dir := t.TempDir()
+	pw := filepath.Join(dir, "pw.txt")
+	writeFile(t, pw, "pw1\n")
+	plain := filepath.Join(dir, "p.yml")
+	writeFile(t, plain, "plain: 1\n")
+
+	if code := run([]string{"rekey", plain,
+		"--vault-password-file=" + pw, "--new-vault-password-file=" + pw}); code == 0 {
+		t.Error("rekey on a plaintext file: exit 0, want non-zero")
+	}
+	if got, _ := os.ReadFile(plain); string(got) != "plain: 1\n" {
+		t.Errorf("plaintext file was modified: %q", got)
+	}
+
+	if code := run([]string{"rekey", plain, "--vault-password-file=" + pw}); code == 0 {
+		t.Error("rekey without --new-vault-password-file: exit 0, want non-zero")
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
