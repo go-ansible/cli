@@ -48,6 +48,8 @@ func run(args []string) int {
 	forks := fs.Int("f", -1, "number of parallel processes to use (also --forks)")
 	fs.IntVar(forks, "forks", -1, "number of parallel processes to use")
 	noColor := fs.Bool("no-color", false, "disable colored output")
+	checkMode := fs.Bool("check", false, "don't make any changes; instead try to predict some of the changes that may occur (also -C)")
+	fs.BoolVar(checkMode, "C", false, "don't make any changes (also --check)")
 	vaultPasswordFile := fs.String("vault-password-file", "", "read the vault password from this file (also --vault-pass-file)")
 	fs.StringVar(vaultPasswordFile, "vault-pass-file", "", "read the vault password from this file")
 	askVaultPass := fs.Bool("ask-vault-password", false, "prompt for the vault password (also --ask-vault-pass)")
@@ -104,6 +106,7 @@ func run(args []string) int {
 	e.SkipTags = splitTagList(skipTags)
 	e.Prompt = terminalPrompt
 	e.VaultPassword = vaultPassword
+	e.CheckMode = *checkMode
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed := false

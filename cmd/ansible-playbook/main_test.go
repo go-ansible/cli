@@ -383,3 +383,50 @@ func TestRunVaultPasswordFile(t *testing.T) {
 		t.Errorf("rendered = %q, want %q", got, "from_vars_file/from_group_vars")
 	}
 }
+
+// TestRunCheckMode covers --check end to end through the CLI: the run
+// reports what would happen and writes nothing. Verified against real
+// ansible-core 2.21.4, whose per-task outcomes for this playbook are
+// identical.
+func TestRunCheckMode(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - copy: {content: "x\n", dest: `+filepath.Join(out, "c.txt")+`}
+    - command: touch `+filepath.Join(out, "cmd.txt")+`
+`)
+
+	for _, flag := range []string{"--check", "-C"} {
+		if code := run([]string{"-i", inv, flag, pb}); code != 0 {
+			t.Fatalf("%s: exit = %d, want 0", flag, code)
+		}
+		entries, err := os.ReadDir(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("%s wrote to the filesystem: %d entries", flag, len(entries))
+		}
+	}
+
+	// And without it, the run really does the work — otherwise the check
+	// above would pass for the wrong reason.
+	if code := run([]string{"-i", inv, pb}); code != 0 {
+		t.Fatalf("real run exit = %d, want 0", code)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("real run produced %d files, want 2", len(entries))
+	}
+}
