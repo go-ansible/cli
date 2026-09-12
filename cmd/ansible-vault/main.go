@@ -57,6 +57,31 @@ func run(args []string) int {
 		return decryptFiles(files, password)
 	case "view":
 		return viewFile(files, password)
+	case "create":
+		if len(files) != 1 {
+			fmt.Fprintln(os.Stderr, "ansible-vault: create takes exactly one filename")
+			return 2
+		}
+		// Real Ansible gates this on stdout being a terminal, with the
+		// same wording and the same --skip-tty-check escape: an editor
+		// opened on a pipe would hang or silently do nothing.
+		if !stdoutIsTTY() && !skipTTY {
+			fmt.Fprintln(os.Stderr, "ansible-vault: not a tty, editor cannot be opened")
+			return 1
+		}
+		if err := createFile(files[0], password, vaultID); err != nil {
+			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			return 1
+		}
+		return 0
+	case "edit":
+		for _, f := range files {
+			if err := editFile(f, password); err != nil {
+				fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+				return 1
+			}
+		}
+		return 0
 	case "rekey":
 		if newPwFile == "" {
 			fmt.Fprintln(os.Stderr, "ansible-vault: rekey requires --new-vault-password-file")
@@ -80,7 +105,9 @@ func usage() {
   ansible-vault decrypt FILE [FILE2 ...] --vault-password-file=PATH
   ansible-vault view FILE --vault-password-file=PATH
   ansible-vault rekey FILE [FILE2 ...] --vault-password-file=PATH --new-vault-password-file=PATH
-  ansible-vault encrypt_string SECRET [SECRET2 ...] --vault-password-file=PATH [--name NAME]`)
+  ansible-vault encrypt_string SECRET [SECRET2 ...] --vault-password-file=PATH [--name NAME]
+  ansible-vault create FILE --vault-password-file=PATH [--vault-id=NAME] [--skip-tty-check]
+  ansible-vault edit FILE [FILE2 ...] --vault-password-file=PATH`)
 }
 
 // parseVaultFlags does minimal hand-rolled flag parsing (--flag=value
@@ -93,6 +120,10 @@ func parseVaultFlags(args []string) (pwFile, vaultID string, files []string, err
 
 // parseVaultFlagsFull also returns --new-vault-password-file, which only
 // rekey uses.
+// skipTTY is set by --skip-tty-check, which real ansible-vault offers so
+// create can run where stdout is not a terminal.
+var skipTTY bool
+
 func parseVaultFlagsFull(args []string) (pwFile, vaultID, newPwFile string, files []string, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -105,6 +136,8 @@ func parseVaultFlagsFull(args []string) (pwFile, vaultID, newPwFile string, file
 				return "", "", "", nil, fmt.Errorf("--vault-password-file requires a value")
 			}
 			pwFile = args[i]
+		case a == "--skip-tty-check":
+			skipTTY = true
 		case strings.HasPrefix(a, "--new-vault-password-file="):
 			newPwFile = strings.TrimPrefix(a, "--new-vault-password-file=")
 		case a == "--new-vault-password-file":
