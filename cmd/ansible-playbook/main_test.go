@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"github.com/go-ansible/vault"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -429,4 +432,77 @@ func TestRunCheckMode(t *testing.T) {
 	if len(entries) != 2 {
 		t.Errorf("real run produced %d files, want 2", len(entries))
 	}
+}
+
+// TestRunDiffMode checks both spellings of the flag, that the unified
+// diff reaches stdout, and that it stays off by default. The expected
+// text was measured from real ansible-core 2.21.4 running the same
+// playbook with --diff --check.
+func TestRunDiffMode(t *testing.T) {
+	dir := t.TempDir()
+	seed := filepath.Join(dir, "seed.txt")
+	writeFile(t, seed, "alpha\nbeta\n")
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, `- hosts: all
+  gather_facts: false
+  tasks:
+    - name: edit
+      lineinfile: {path: `+seed+`, line: gamma}
+`)
+
+	wantDiff := "--- before: " + seed + " (content)\n" +
+		"+++ after: " + seed + " (content)\n" +
+		"@@ -1,2 +1,3 @@\n alpha\n beta\n+gamma\n"
+
+	for _, flag := range []string{"--diff", "-D"} {
+		// --check keeps the fixture intact across both spellings.
+		out := captureStdout(t, func() {
+			if code := run([]string{"-i", inv, flag, "--check", "--no-color", pb}); code != 0 {
+				t.Fatalf("%s: exit = %d, want 0", flag, code)
+			}
+		})
+		if !strings.Contains(out, wantDiff) {
+			t.Errorf("%s: missing the diff.\n--- got ---\n%s\n--- want to contain ---\n%s", flag, out, wantDiff)
+		}
+	}
+
+	// Without the flag nothing extra is printed — otherwise the checks
+	// above would pass for a reason that has nothing to do with --diff.
+	out := captureStdout(t, func() {
+		if code := run([]string{"-i", inv, "--check", "--no-color", pb}); code != 0 {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+	})
+	if strings.Contains(out, "@@") || strings.Contains(out, "--- before") {
+		t.Errorf("a run without --diff printed one:\n%s", out)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns
+// what it wrote. The callbacks hold os.Stdout only for the duration of a
+// run, so swapping it around fn is enough.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+
+	fn()
+	os.Stdout = saved
+	w.Close()
+	out := <-done
+	r.Close()
+	return out
 }
