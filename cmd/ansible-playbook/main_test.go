@@ -506,3 +506,64 @@ func captureStdout(t *testing.T, fn func()) string {
 	r.Close()
 	return out
 }
+
+// TestRunLimit covers both spellings of the flag, that it intersects
+// with the play's own hosts rather than replacing them, and that a
+// limit leaving nothing to target is a hard error — all measured
+// against real ansible-core 2.21.4.
+func TestRunLimit(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, `web:
+  hosts:
+    h1: {ansible_connection: local}
+    h2: {ansible_connection: local}
+    h3: {ansible_connection: local}
+`)
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, `- hosts: web
+  gather_facts: false
+  tasks:
+    - {name: m, debug: {msg: "{{ inventory_hostname }}"}}
+`)
+
+	ran := func(args ...string) (string, int) {
+		var code int
+		out := captureStdout(t, func() {
+			code = run(append([]string{"-i", inv, "--no-color"}, append(args, pb)...))
+		})
+		var hosts []string
+		for _, h := range []string{"h1", "h2", "h3"} {
+			if strings.Contains(out, `"msg": "`+h+`"`) {
+				hosts = append(hosts, h)
+			}
+		}
+		return strings.Join(hosts, ","), code
+	}
+
+	for _, flag := range []string{"--limit", "-l"} {
+		if got, code := ran(flag, "h1"); got != "h1" || code != 0 {
+			t.Errorf("%s h1: ran on %q exit %d, want h1 exit 0", flag, got, code)
+		}
+	}
+	if got, _ := ran("--limit", "h1,h2"); got != "h1,h2" {
+		t.Errorf("--limit h1,h2 ran on %q", got)
+	}
+	// The exclusion form, which depends on real Ansible's own pattern
+	// ordering rather than left-to-right evaluation.
+	if got, _ := ran("--limit", "!h1"); got != "h2,h3" {
+		t.Errorf(`--limit '!h1' ran on %q, want h2,h3`, got)
+	}
+	// No limit at all is not a filter.
+	if got, _ := ran(); got != "h1,h2,h3" {
+		t.Errorf("unlimited run went to %q", got)
+	}
+	// A limit matching nothing is an error, not a quiet empty run.
+	if got, code := ran("--limit", "nosuch"); code == 0 {
+		t.Errorf("--limit nosuch exited 0 (ran on %q); real ansible-playbook exits non-zero", got)
+	}
+	// But an unknown host alongside a known one is fine.
+	if got, code := ran("--limit", "h1,nosuch"); got != "h1" || code != 0 {
+		t.Errorf("--limit h1,nosuch ran on %q exit %d, want h1 exit 0", got, code)
+	}
+}

@@ -3,9 +3,9 @@ module github.com/go-ansible/cli
 go 1.26.4
 
 require (
-	github.com/go-ansible/inventory v0.4.0
+	github.com/go-ansible/inventory v0.6.0
 	github.com/go-ansible/modules v0.45.0
-	github.com/go-ansible/playbook v0.27.0
+	github.com/go-ansible/playbook v0.30.0
 	github.com/go-ansible/vault v0.4.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-remoteexec/transport v0.1.7

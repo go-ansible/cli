@@ -50,6 +50,8 @@ func run(args []string) int {
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	checkMode := fs.Bool("check", false, "don't make any changes; instead try to predict some of the changes that may occur (also -C)")
 	fs.BoolVar(checkMode, "C", false, "don't make any changes (also --check)")
+	limit := fs.String("limit", "", "further limit selected hosts to an additional pattern (also -l)")
+	fs.StringVar(limit, "l", "", "further limit selected hosts to an additional pattern")
 	diffMode := fs.Bool("diff", false, "when changing any file, show the differences (also -D)")
 	fs.BoolVar(diffMode, "D", false, "when changing any file, show the differences (also --diff)")
 	vaultPasswordFile := fs.String("vault-password-file", "", "read the vault password from this file (also --vault-pass-file)")
@@ -110,6 +112,30 @@ func run(args []string) int {
 	e.VaultPassword = vaultPassword
 	e.CheckMode = *checkMode
 	e.DiffMode = *diffMode
+	e.Limit = *limit
+
+	// Real Ansible makes this check ONCE, before any play runs, and
+	// against "all" rather than any play's own pattern
+	// (ansible/cli/__init__.py get_host_list) — which is why a play
+	// whose hosts: matches nothing merely reports "skipping: no hosts
+	// matched" while a --limit matching nothing is a hard error.
+	if *limit != "" {
+		all, aerr := inv.Match("all")
+		if aerr != nil {
+			fmt.Fprintln(os.Stderr, "ansible-playbook:", aerr)
+			return 1
+		}
+		targeted, terr := inv.Match(*limit)
+		if terr != nil {
+			fmt.Fprintln(os.Stderr, "ansible-playbook:", terr)
+			return 1
+		}
+		if len(all) > 0 && len(targeted) == 0 {
+			fmt.Fprintln(os.Stderr, "[WARNING]: Could not match supplied host pattern, ignoring:", *limit)
+			fmt.Fprintln(os.Stderr, "[ERROR]: Specified inventory, host pattern and/or --limit leaves us with no hosts to target.")
+			return 1
+		}
+	}
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed := false
