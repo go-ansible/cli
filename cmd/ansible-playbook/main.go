@@ -50,6 +50,13 @@ func run(args []string) int {
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	checkMode := fs.Bool("check", false, "don't make any changes; instead try to predict some of the changes that may occur (also -C)")
 	fs.BoolVar(checkMode, "C", false, "don't make any changes (also --check)")
+	startAtTask := fs.String("start-at-task", "", "start the playbook at the task matching this name")
+	forceHandlers := fs.Bool("force-handlers", false, "run handlers even if a task fails")
+	// go-ansible keeps no fact cache, so there is nothing to flush. The
+	// flag is accepted so a command line written for real
+	// ansible-playbook still runs, and does nothing — which is also
+	// what real Ansible does when no cache plugin is configured.
+	fs.Bool("flush-cache", false, "clear the fact cache for every host in the inventory (no-op: this port keeps no fact cache)")
 	var inspectFlags inspectMode
 	fs.BoolVar(&inspectFlags.listTasks, "list-tasks", false, "list all tasks that would be executed")
 	fs.BoolVar(&inspectFlags.listTags, "list-tags", false, "list all available tags")
@@ -118,6 +125,8 @@ func run(args []string) int {
 	e.CheckMode = *checkMode
 	e.DiffMode = *diffMode
 	e.Limit = *limit
+	e.StartAtTask = *startAtTask
+	e.ForceHandlers = *forceHandlers
 
 	// Real Ansible makes this check ONCE, before any play runs, and
 	// against "all" rather than any play's own pattern

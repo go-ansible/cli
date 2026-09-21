@@ -185,3 +185,82 @@ func TestSyntaxCheckRejectsABrokenPlaybook(t *testing.T) {
 		t.Errorf("exit = %d, real ansible-playbook exits 4 on a parse error", code)
 	}
 }
+
+// TestStartAtTaskFlag covers the CLI wiring for --start-at-task,
+// including the glob matching and case sensitivity measured from real
+// ansible-core 2.21.4.
+func TestStartAtTaskFlag(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    h1: {ansible_connection: local}\n")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, `- name: p1
+  hosts: all
+  gather_facts: false
+  tasks:
+    - {name: one,   debug: {msg: x}}
+    - {name: two,   debug: {msg: x}}
+- name: p2
+  hosts: all
+  gather_facts: false
+  tasks:
+    - {name: three, debug: {msg: x}}
+`)
+
+	ran := func(args ...string) string {
+		out := captureStdout(t, func() {
+			if code := run(append([]string{"-i", inv, "--no-color"}, append(args, pb)...)); code != 0 {
+				t.Fatalf("exit = %d", code)
+			}
+		})
+		var tasks []string
+		for _, name := range []string{"one", "two", "three"} {
+			if strings.Contains(out, "TASK ["+name+"]") {
+				tasks = append(tasks, name)
+			}
+		}
+		return strings.Join(tasks, ",")
+	}
+
+	for _, tt := range []struct{ start, want string }{
+		{"one", "one,two,three"},
+		{"two", "two,three"},
+		// The started state carries across plays.
+		{"three", "three"},
+		{"tw*", "two,three"},
+		{"*wo", "two,three"},
+		// A bare prefix does not match, and the match is case-sensitive.
+		{"tw", ""},
+		{"TWO", ""},
+		{"nosuch", ""},
+	} {
+		if got := ran("--start-at-task", tt.start); got != tt.want {
+			t.Errorf("--start-at-task %q ran %q, real ansible-playbook runs %q", tt.start, got, tt.want)
+		}
+	}
+}
+
+// --flush-cache is accepted and changes nothing: this port keeps no
+// fact cache, so there is nothing to flush.
+func TestFlushCacheIsAcceptedAndHarmless(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    h1: {ansible_connection: local}\n")
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, "- {name: p, hosts: all, gather_facts: false, tasks: [{name: t, debug: {msg: x}}]}\n")
+
+	withFlag := captureStdout(t, func() {
+		if code := run([]string{"-i", inv, "--no-color", "--flush-cache", pb}); code != 0 {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+	})
+	without := captureStdout(t, func() {
+		run([]string{"-i", inv, "--no-color", pb})
+	})
+	if !strings.Contains(withFlag, "TASK [t]") {
+		t.Errorf("--flush-cache changed what ran:\n%s", withFlag)
+	}
+	if strings.Count(withFlag, "TASK [t]") != strings.Count(without, "TASK [t]") {
+		t.Error("--flush-cache must be a no-op here")
+	}
+}
