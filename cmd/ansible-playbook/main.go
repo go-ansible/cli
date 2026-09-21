@@ -50,6 +50,11 @@ func run(args []string) int {
 	noColor := fs.Bool("no-color", false, "disable colored output")
 	checkMode := fs.Bool("check", false, "don't make any changes; instead try to predict some of the changes that may occur (also -C)")
 	fs.BoolVar(checkMode, "C", false, "don't make any changes (also --check)")
+	var inspectFlags inspectMode
+	fs.BoolVar(&inspectFlags.listTasks, "list-tasks", false, "list all tasks that would be executed")
+	fs.BoolVar(&inspectFlags.listTags, "list-tags", false, "list all available tags")
+	fs.BoolVar(&inspectFlags.listHosts, "list-hosts", false, "outputs a list of matching hosts")
+	fs.BoolVar(&inspectFlags.syntaxCheck, "syntax-check", false, "perform a syntax check on the playbook, but do not execute it")
 	limit := fs.String("limit", "", "further limit selected hosts to an additional pattern (also -l)")
 	fs.StringVar(limit, "l", "", "further limit selected hosts to an additional pattern")
 	diffMode := fs.Bool("diff", false, "when changing any file, show the differences (also -D)")
@@ -148,6 +153,15 @@ func run(args []string) int {
 			}
 			return 4
 		}
+		if inspectFlags.any() {
+			// These flags print what the playbook WOULD do and run
+			// nothing at all, so they come after parsing (which is what
+			// --syntax-check is checking) and before any connection.
+			inspect(os.Stdout, inspectFlags, path, pb, inv, *limit,
+				splitTagList(runTags), splitTagList(skipTags))
+			continue
+		}
+
 		e.BaseDir = filepath.Dir(path)
 		rr, err := e.RunPlaybook(context.Background(), pb)
 		if err != nil {
