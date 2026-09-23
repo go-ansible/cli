@@ -36,6 +36,8 @@ github.com/go-ansible/modules v0.51.0 h1:QxA+X6Rz/Br+kZyDcAenqj0ozBbUZ4Q9e9blfMT
 github.com/go-ansible/modules v0.51.0/go.mod h1:CQhR14x0GoJqC3JxizruQb3MchFaNTIfGCS99nkGSOc=
 github.com/go-ansible/playbook v0.50.0 h1:AB+6StK3WM/QrZb9H3qInL1kplwW8rhkpDfDTQyzpE8=
 github.com/go-ansible/playbook v0.50.0/go.mod h1:tl4+UZC9KaPfp/iDF125dI8QEDdu9Y3jVyHqRl+bLZQ=
+github.com/go-ansible/playbook v0.51.0 h1:QYN9Y9r6BY7qywBTXxymAc7103bpJ8Ov8CymKCkyPDM=
+github.com/go-ansible/playbook v0.51.0/go.mod h1:tl4+UZC9KaPfp/iDF125dI8QEDdu9Y3jVyHqRl+bLZQ=
 github.com/go-ansible/template v0.18.0 h1:LHpeopj5yhdCGTekzPHlaU0rbWzGsD6qySDoFc5l5ak=
 github.com/go-ansible/template v0.18.0/go.mod h1:FpoXRNI4Qb5fOuoiiEyQpXb50g6Tzi0In5TYVCemVvE=
 github.com/go-ansible/vars v0.1.2 h1:ykPuxT1puCGnU4Mxa9yqcf3UeROwsOduqyOx4FOMO7U=

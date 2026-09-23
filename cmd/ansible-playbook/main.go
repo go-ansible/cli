@@ -152,7 +152,7 @@ func run(args []string) int {
 	}
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
-	failed := false
+	failed, unreachable := false, false
 	for _, path := range playbooks {
 		pb, err := playbook.ParseFileWithVault(path, vaultPassword)
 		if err != nil {
@@ -180,6 +180,20 @@ func run(args []string) int {
 		if rr != nil && rr.Failed() {
 			failed = true
 		}
+		if rr != nil && rr.Unreachable() {
+			unreachable = true
+		}
+	}
+	// Real ansible-playbook's own codes, and unreachable WINS over
+	// failed rather than combining with it: a run with one failed host
+	// and one unreachable host exits 4, not 2 and not 6. That is
+	// StrategyBase._process_pending_results' own if/elif chain
+	// (HOST_UNREACHABLE = 4, HOST_FAILED = 2), and it was measured
+	// three ways before being written here. This port returned 2 for
+	// both, so a caller distinguishing "could not reach it" from "it
+	// ran and failed" — a retry loop, a deployment gate — could not.
+	if unreachable {
+		return 4
 	}
 	if failed {
 		return 2
