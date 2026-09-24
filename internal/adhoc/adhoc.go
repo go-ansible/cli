@@ -7,8 +7,8 @@ package adhoc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/go-ansible/template"
 	"io"
 	"strings"
 	"sync"
@@ -86,17 +86,105 @@ func Run(ctx context.Context, inv *inventory.Inventory, hostNames []string, modu
 				status = "FAILED"
 				anyFailed = true
 			} else if res.Changed {
-				status = "SUCCESS (changed)"
+				// Real says CHANGED, not "SUCCESS (changed)".
+				status = "CHANGED"
 			}
-			payload := map[string]any{"changed": res.Changed, "msg": res.Msg}
-			for k, v := range res.Extra {
-				payload[k] = v
-			}
-			enc, _ := json.MarshalIndent(payload, "", "    ")
-			fmt.Fprintf(w, "%s | %s => %s\n", hostName, status, enc)
+			fmt.Fprint(w, formatResult(hostName, status, moduleName, res))
 		}(h)
 	}
 	wg.Wait()
 
 	return anyFailed
+}
+
+// noJSONModules are the ones real's ad-hoc callback reports as a line
+// of text rather than a JSON dump — ansible's own MODULE_NO_JSON. A
+// command's output is what the caller ran the command FOR; wrapping it
+// in JSON with escaped newlines makes it unreadable.
+var noJSONModules = map[string]bool{
+	"command": true, "shell": true, "raw": true,
+	"win_command": true, "win_shell": true,
+}
+
+// debugAllowedKeys is what real's _clean_results leaves on a debug
+// result once it has a msg: everything else is dropped so the message
+// stands alone, which is the whole point of debug.
+var debugAllowedKeys = map[string]bool{"msg": true, "failed": true, "changed": true, "skipped": true}
+
+// formatResult renders one host's result the way real's "minimal"
+// callback does — the ad-hoc default, and a different shape from the
+// playbook one.
+func formatResult(host, status, module string, res modules.Result) string {
+	name := modules.NormalizeName(module)
+
+	// command/shell/raw: "host | CHANGED | rc=0 >>" then the output
+	// itself. Real concatenates stdout, stderr and msg in that order.
+	if noJSONModules[name] {
+		rc := -1
+		if v, ok := res.Extra["rc"].(int); ok {
+			rc = v
+		}
+		body := stringField(res.Extra, "stdout") + stringField(res.Extra, "stderr") + res.Msg
+		return fmt.Sprintf("%s | %s | rc=%d >>\n%s\n", host, status, rc, body)
+	}
+
+	payload := map[string]any{"changed": res.Changed}
+	if res.Msg != "" {
+		payload["msg"] = res.Msg
+	}
+	for k, v := range res.Extra {
+		// Internal bookkeeping, never part of a result a caller sees.
+		if strings.HasPrefix(k, "_ansible_") {
+			continue
+		}
+		payload[k] = v
+	}
+	if len(res.Facts) > 0 {
+		payload["ansible_facts"] = setupFactsDict(res.Facts)
+		delete(payload, "msg")
+	}
+	if name == "debug" && res.Msg != "" {
+		for k := range payload {
+			if !debugAllowedKeys[k] {
+				delete(payload, k)
+			}
+		}
+		// A debug result carries no "changed" either — its action
+		// plugin never sets one.
+		delete(payload, "changed")
+	}
+	enc, err := template.ToJSON(payload, 4)
+	if err != nil {
+		return fmt.Sprintf("%s | %s => %v\n", host, status, payload)
+	}
+	return fmt.Sprintf("%s | %s => %s\n", host, status, enc)
+}
+
+func stringField(extra map[string]any, key string) string {
+	s, _ := extra[key].(string)
+	return s
+}
+
+// setupFactsDict is the shape `ansible -m setup` dumps: every fact
+// under its ansible_-prefixed name, with two exceptions real keeps
+// bare — gather_subset and module_setup — and the internal ones
+// (leading underscore) left out entirely.
+//
+// This is NOT vars.InjectFacts' shape. That one carries both the bare
+// map under "ansible_facts" AND the aliases, because a playbook reads
+// facts both ways; nesting it here produced an ansible_facts inside
+// ansible_facts and a doubled "ansible__ansible_facts_gathered".
+func setupFactsDict(facts map[string]any) map[string]any {
+	out := make(map[string]any, len(facts))
+	for k, v := range facts {
+		switch {
+		case strings.HasPrefix(k, "_"):
+			continue
+		case k == "gather_subset" || k == "module_setup":
+			out[k] = v
+		default:
+			out["ansible_"+k] = v
+		}
+	}
+	return out
 }
