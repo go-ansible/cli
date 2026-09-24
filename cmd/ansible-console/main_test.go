@@ -192,8 +192,12 @@ func TestHandleLineRunsBareLineAsShell(t *testing.T) {
 	var out bytes.Buffer
 	s, _ := newSession(localInventory(t), "all", &out)
 	s.handleLine("echo from the console")
-	if !strings.Contains(out.String(), "localhost | SUCCESS") {
-		t.Fatalf("output = %q", out.String())
+	// A shell/command result reads as real's ad-hoc callback writes
+	// it — "host | CHANGED | rc=0 >>" and then the output itself —
+	// not as a JSON dump. This asserted SUCCESS, which was this
+	// port's own wording for a changed command.
+	if want := "localhost | CHANGED | rc=0 >>\nfrom the console\n"; out.String() != want {
+		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
 }
 

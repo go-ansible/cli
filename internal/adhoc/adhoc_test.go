@@ -3,6 +3,8 @@ package adhoc
 import (
 	"bytes"
 	"context"
+	"github.com/go-ansible/modules"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -95,7 +97,78 @@ func TestRunChangedStatus(t *testing.T) {
 	if failed {
 		t.Fatalf("Run reported failure: %s", buf.String())
 	}
-	if !strings.Contains(buf.String(), "SUCCESS (changed)") {
-		t.Fatalf("output = %q, want a changed command to report SUCCESS (changed)", buf.String())
+	// Real says CHANGED, and reports a command as a line of text
+	// rather than a JSON dump — "SUCCESS (changed)" was this port's
+	// own invention.
+	if want := "localhost | CHANGED | rc=0 >>\n\n"; buf.String() != want {
+		t.Fatalf("output = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestFormatResultMatchesRealsMinimalCallback pins the ad-hoc output
+// shapes MEASURED from real ansible-core 2.21.4. The ad-hoc default
+// callback is "minimal", a different shape from the playbook one, and
+// this port printed a JSON dump for everything.
+func TestFormatResultMatchesRealsMinimalCallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, module, status string
+		res                  modules.Result
+		want                 string
+	}{{
+		// A command's output is what the caller ran it FOR; real
+		// prints it as text, with rc on the header line.
+		name: "a command is text, not JSON", module: "command", status: "CHANGED",
+		res:  modules.Result{Changed: true}.WithExtra("rc", 0).WithExtra("stdout", "inline\n"),
+		want: "h1 | CHANGED | rc=0 >>\ninline\n\n",
+	}, {
+		// stdout, then stderr, then msg — real's own order.
+		name: "stderr follows stdout", module: "shell", status: "CHANGED",
+		res: modules.Result{Changed: true}.WithExtra("rc", 0).
+			WithExtra("stdout", "out").WithExtra("stderr", "err"),
+		want: "h1 | CHANGED | rc=0 >>\nouterr\n",
+	}, {
+		// debug's message stands alone: no changed, and none of the
+		// bookkeeping keys.
+		name: "debug shows only its message", module: "debug", status: "SUCCESS",
+		res:  modules.Result{Msg: "hi"}.WithExtra("_ansible_verbose_always", true),
+		want: "h1 | SUCCESS => {\n    \"msg\": \"hi\"\n}\n",
+	}, {
+		name: "an ordinary module dumps its result", module: "ping", status: "SUCCESS",
+		res:  modules.Result{}.WithExtra("ping", "pong"),
+		want: "h1 | SUCCESS => {\n    \"changed\": false,\n    \"ping\": \"pong\"\n}\n",
+	}, {
+		// _ansible_* keys are internal bookkeeping and never part of
+		// a result a caller sees.
+		name: "internal keys are stripped", module: "copy", status: "CHANGED",
+		res:  modules.Result{Changed: true}.WithExtra("_ansible_verbose_always", true),
+		want: "h1 | CHANGED => {\n    \"changed\": true\n}\n",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatResult("h1", tc.status, tc.module, tc.res); got != tc.want {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSetupFactsDict: `ansible -m setup` dumps every fact under its
+// ansible_-prefixed name, keeping gather_subset and module_setup bare
+// and leaving the internal ones out. It is NOT vars.InjectFacts'
+// shape — nesting that produced an ansible_facts inside ansible_facts
+// and a doubled "ansible__ansible_facts_gathered".
+func TestSetupFactsDict(t *testing.T) {
+	got := setupFactsDict(map[string]any{
+		"system":                  "Darwin",
+		"gather_subset":           []any{"all"},
+		"module_setup":            true,
+		"_ansible_facts_gathered": true,
+	})
+	want := map[string]any{
+		"ansible_system": "Darwin",
+		"gather_subset":  []any{"all"},
+		"module_setup":   true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %#v\nwant %#v", got, want)
 	}
 }
