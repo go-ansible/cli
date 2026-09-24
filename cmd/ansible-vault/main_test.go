@@ -348,3 +348,32 @@ func captureStdout(t *testing.T, fn func()) string {
 	w.Close()
 	return <-done
 }
+
+// TestReportSuccessIsSilentWhenPiped: real guards every one of these
+// messages with `if sys.stdout.isatty()`, writes it to STDERR, and
+// prints the bare phrase with no file name. A piped run — which is
+// how a script uses ansible-vault — says nothing at all.
+//
+// This port printed "Encryption successful: <file>" to stdout
+// unconditionally, so a script reading the output got a line of prose
+// mixed into its data.
+func TestReportSuccessIsSilentWhenPiped(t *testing.T) {
+	// go test's stdout is not a terminal, which is exactly the case
+	// that must stay silent.
+	out, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = out, out
+	reportSuccess("Encryption successful")
+	os.Stdout, os.Stderr = stdout, stderr
+
+	body, err := os.ReadFile(out.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 0 {
+		t.Errorf("wrote %q when stdout is not a terminal, want nothing", body)
+	}
+}
