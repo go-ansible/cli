@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"github.com/go-ansible/cli/internal/vaultpw"
+	"golang.org/x/term"
 	"os"
 	"strings"
 
@@ -188,7 +189,7 @@ func encryptFiles(files []string, password, vaultID string) int {
 			code = 1
 			continue
 		}
-		fmt.Printf("Encryption successful: %s\n", path)
+		reportSuccess("Encryption successful")
 	}
 	return code
 }
@@ -213,7 +214,7 @@ func decryptFiles(files []string, password string) int {
 			code = 1
 			continue
 		}
-		fmt.Printf("Decryption successful: %s\n", path)
+		reportSuccess("Decryption successful")
 	}
 	return code
 }
@@ -272,7 +273,7 @@ func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
 			code = 1
 			continue
 		}
-		fmt.Println("Rekey successful")
+		reportSuccess("Rekey successful")
 	}
 	return code
 }
@@ -355,4 +356,24 @@ func encryptString(args []string) int {
 		}
 	}
 	return 0
+}
+
+// reportSuccess says a vault operation worked, the way real
+// ansible-vault does — which is more particular than it looks, and
+// all three parts were wrong here:
+//
+//   - only when stdout is a TTY. Real guards every one of these with
+//     `if sys.stdout.isatty()`, so a piped or redirected run says
+//     nothing and a script reading the output sees only the data.
+//   - on STDERR, so it never lands in that data.
+//   - without the file name. Real prints the bare phrase.
+//
+// Measuring alone would have said "real prints nothing" — the runs
+// that showed that were piped. Reading ansible/cli/vault.py alongside
+// showed why, and that the interactive message is real and worth
+// keeping.
+func reportSuccess(message string) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, message)
+	}
 }
