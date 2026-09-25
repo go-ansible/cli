@@ -39,7 +39,15 @@ func run(args []string) int {
 		fmt.Println(version.String("ansible-galaxy"))
 		return 0
 	}
-	if len(args) < 1 || args[0] != "install" {
+	switch {
+	case len(args) < 1:
+		usage()
+		return 2
+	case args[0] == "list":
+		return runList(args[1:])
+	case args[0] == "remove":
+		return runRemove(args[1:])
+	case args[0] != "install":
 		usage()
 		return 2
 	}
@@ -74,6 +82,8 @@ func run(args []string) int {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ansible-galaxy install -r requirements.yml [-p roles/]")
+	fmt.Fprintln(os.Stderr, "       ansible-galaxy list [-p roles/] [ROLE]")
+	fmt.Fprintln(os.Stderr, "       ansible-galaxy remove [-p roles/] ROLE...")
 }
 
 func parseInstallFlags(args []string) (reqFile, rolesDir string, err error) {
