@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
+	"strconv"
 	"strings"
 
 	"github.com/go-ansible/cli/internal/adhoc"
@@ -81,10 +83,16 @@ type session struct {
 	hosts   []string
 	become  bool
 	out     io.Writer
+
+	// remoteUser, forks and verbosity are shown in the prompt and
+	// settable from it, as real's console allows.
+	remoteUser string
+	forks      int
+	verbosity  int
 }
 
 func newSession(inv *inventory.Inventory, pattern string, out io.Writer) (*session, error) {
-	s := &session{inv: inv, out: out}
+	s := &session{inv: inv, out: out, remoteUser: currentUser(), forks: defaultForks}
 	if err := s.setPattern(pattern); err != nil {
 		return nil, err
 	}
@@ -105,19 +113,57 @@ func (s *session) setPattern(pattern string) error {
 	return nil
 }
 
+// prompt is real's: the user it would connect as, the current
+// pattern, how many hosts that matches, and the fork count -- ending
+// in "#" rather than "$" when become is on, the same way a root shell
+// prompt does.
+//
+//	david@all (3)[f:5]$
+//	david@all (3)[f:5]#      (become)
 func (s *session) prompt() string {
-	return fmt.Sprintf("%s (%d)> ", s.pattern, len(s.hosts))
+	end := "$"
+	if s.become {
+		end = "#"
+	}
+	return fmt.Sprintf("%s@%s (%d)[f:%d]%s ", s.remoteUser, s.pattern, len(s.hosts), s.forks, end)
 }
 
+// defaultForks is real's own default, and what the prompt shows until
+// the forks command changes it.
+const defaultForks = 5
+
+// currentUser is who the console would connect as when nothing says
+// otherwise -- real's own default remote_user.
+func currentUser() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if n := os.Getenv("USER"); n != "" {
+		return n
+	}
+	return "root"
+}
+
+// consoleBanner is printed once at startup, verbatim as real prints
+// it, followed by a blank line.
+const consoleBanner = "Welcome to the ansible console. Type help or ? to list commands."
+
+// consoleFarewell is printed when the session ends, however it ends.
+const consoleFarewell = "Ansible-console was exited."
+
 func runREPL(s *session, in io.Reader, out io.Writer) {
+	fmt.Fprintf(out, "%s\n\n", consoleBanner)
 	scanner := bufio.NewScanner(in)
 	fmt.Fprint(out, s.prompt())
 	for scanner.Scan() {
 		if s.handleLine(scanner.Text()) {
-			return
+			break
 		}
 		fmt.Fprint(out, s.prompt())
 	}
+	// Said however the session ended -- an explicit exit, or the
+	// input running out, which is what a piped script does.
+	fmt.Fprintf(out, "\n%s\n", consoleFarewell)
 }
 
 // handleLine processes one line of REPL input and reports whether the
@@ -140,7 +186,9 @@ func (s *session) handleLine(line string) (exit bool) {
 		}
 		return false
 	case "cd":
-		target := "all"
+		// Bare "cd" goes back to everything, which real spells "*"
+		// rather than "all" -- and the prompt then shows "*".
+		target := "*"
 		if len(fields) > 1 {
 			target = strings.Join(fields[1:], " ")
 		}
@@ -149,12 +197,49 @@ func (s *session) handleLine(line string) (exit bool) {
 		}
 		return false
 	case "become":
-		s.become = true
-		fmt.Fprintln(s.out, "become enabled")
+		// Real refuses a bare "become": the prompt already shows the
+		// state, so a command that silently toggled it would be
+		// ambiguous.
+		if len(fields) < 2 {
+			fmt.Fprintln(s.out, "Please specify become value, e.g. `become yes`")
+			return false
+		}
+		s.become = truthy(fields[1])
 		return false
 	case "nobecome":
 		s.become = false
-		fmt.Fprintln(s.out, "become disabled")
+		return false
+	case "forks":
+		if len(fields) < 2 {
+			fmt.Fprintln(s.out, "Please specify a fork value, e.g. `forks 5`")
+			return false
+		}
+		n, err := strconv.Atoi(fields[1])
+		if err != nil || n < 0 {
+			fmt.Fprintln(s.out, "Please specify a fork value, e.g. `forks 5`")
+			return false
+		}
+		s.forks = n
+		return false
+	case "remote_user":
+		if len(fields) < 2 {
+			fmt.Fprintln(s.out, "Please specify a remote user, e.g. `remote_user root`")
+			return false
+		}
+		s.remoteUser = fields[1]
+		return false
+	case "verbosity":
+		if len(fields) < 2 {
+			fmt.Fprintln(s.out, "Please specify a verbosity level, e.g. `verbosity 3`")
+			return false
+		}
+		n, err := strconv.Atoi(fields[1])
+		if err != nil || n < 0 {
+			fmt.Fprintln(s.out, "Please specify a verbosity level, e.g. `verbosity 3`")
+			return false
+		}
+		s.verbosity = n
+		fmt.Fprintf(s.out, "verbosity level set to %d\n", n)
 		return false
 	}
 
@@ -190,4 +275,15 @@ Anything else runs as a module: a line starting with a registered
 module name ("copy dest=/tmp/x content=hi") runs that module with the
 rest of the line as its arguments; any other line runs as a shell
 command against every matched host.`)
+}
+
+// truthy reads the values real accepts for become. It is deliberately
+// narrow: anything that is not plainly affirmative turns become OFF,
+// so a typo cannot leave a session silently escalated.
+func truthy(v string) bool {
+	switch strings.ToLower(v) {
+	case "yes", "true", "on", "1", "y":
+		return true
+	}
+	return false
 }
