@@ -85,7 +85,10 @@ func loadOrEmpty(path, vaultPassword string, warn playbook.Warner) (*inventory.I
 		// EXIST gets the "Unable to parse" line alone: real's plugins
 		// only report a parse failure once they have actually tried to
 		// parse, so an absent -i produces one warning there and this
-		// produced two until the ad-hoc comparison caught it. Real says
+		// produced two until the ad-hoc comparison caught it. A
+		// directory holding no inventory source at all is the same
+		// case for the same reason: real names it, having never
+		// reached a parser for it. Real says
 		// more here than this can: it prints a structured block with
 		// the plugin it tried, the source position and an excerpt,
 		// which needs per-node positions this port's parsers do not
@@ -98,7 +101,7 @@ func loadOrEmpty(path, vaultPassword string, warn playbook.Warner) (*inventory.I
 		// sentence that reads "Failed to parse inventory: inventory:
 		// ...", so it comes off here — the one place that composes
 		// the two.
-		if !errors.Is(err, fs.ErrNotExist) {
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, inventory.ErrNoSources) {
 			warn(fmt.Sprintf(failedToParse, strings.TrimPrefix(err.Error(), "inventory: ")))
 		}
 		warn(fmt.Sprintf(unableToParse, shown))
