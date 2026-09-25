@@ -32,6 +32,18 @@ func TestLoadWarnings(t *testing.T) {
 	empty := write(t, dir, "empty.ini", "")
 	good := write(t, dir, "good.ini", "h1\n")
 
+	emptyDir := filepath.Join(dir, "emptydir")
+	if err := os.Mkdir(emptyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dirWithEmptyFile := filepath.Join(dir, "withfile")
+	if err := os.Mkdir(dirWithEmptyFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirWithEmptyFile, "hosts.ini"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		name    string
 		path    string
@@ -81,6 +93,25 @@ func TestLoadWarnings(t *testing.T) {
 		want: []string{
 			"Unable to parse " + missing + " as an inventory source",
 			"No inventory was parsed, only implicit localhost is available",
+		},
+	}, {
+		// Measured: a directory holding no inventory SOURCE is named
+		// like a missing file -- no cause line, because real never
+		// reached a parser for it. Three shapes behave identically:
+		// empty, only group_vars/, only a dotfile.
+		name: "directory with no sources", path: emptyDir, pattern: "all",
+		want: []string{
+			"Unable to parse " + emptyDir + " as an inventory source",
+			"No inventory was parsed, only implicit localhost is available",
+			"provided hosts list is empty, only localhost is available. Note that the implicit localhost does not match 'all'",
+		},
+	}, {
+		// And a directory holding an inventory file parses, even an
+		// empty one -- it is the DIRECTORY that must hold a source,
+		// not the source that must hold hosts.
+		name: "directory with an empty file", path: dirWithEmptyFile, pattern: "all",
+		want: []string{
+			"provided hosts list is empty, only localhost is available. Note that the implicit localhost does not match 'all'",
 		},
 	}, {
 		name: "usable source warns nothing", path: good, pattern: "all",
