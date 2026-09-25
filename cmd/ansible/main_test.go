@@ -98,9 +98,14 @@ func TestRunNoHostsMatched(t *testing.T) {
 	if err := os.WriteFile(inv, []byte("all:\n  hosts:\n    localhost: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A pattern that matched nothing is NOT an error. Measured against
+	// ansible-core 2.21.4: `ansible -i inv nomatch -m ping` exits 0,
+	// having warned "Could not match supplied host pattern" on stderr
+	// and run the module on no hosts. This asserted 1 -- our exit
+	// status, not real's.
 	code := run([]string{"nomatch", "-i", inv, "-m", "command", "-a", "echo hi"})
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0: an unmatched pattern warns, it does not fail", code)
 	}
 }
 
@@ -125,10 +130,20 @@ func TestRunMissingRequiredFlags(t *testing.T) {
 	}
 }
 
-func TestRunInventoryError(t *testing.T) {
+// An inventory that cannot be read is NOT fatal either: real warns and
+// carries on with the implicit localhost.
+func TestRunInventoryErrorIsNotFatal(t *testing.T) {
 	code := run([]string{"all", "-i", filepath.Join(t.TempDir(), "absent.yml"), "-m", "command"})
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+}
+
+// And the invocation real users type most often -- no -i at all --
+// must work, because the implicit localhost always exists.
+func TestRunWithoutInventoryTargetsImplicitLocalhost(t *testing.T) {
+	if code := run([]string{"localhost", "-m", "ping"}); code != 0 {
+		t.Fatalf("exit = %d, want 0 for `ansible localhost -m ping`", code)
 	}
 }
 

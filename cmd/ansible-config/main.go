@@ -95,7 +95,7 @@ func runView() int {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-config:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 	os.Stdout.Write(data)

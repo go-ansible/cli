@@ -37,7 +37,7 @@ func run(args []string) int {
 
 	pwFile, vaultID, newPwFile, files, err := parseVaultFlagsFull(rest)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 2
 	}
 	if len(files) == 0 {
@@ -47,7 +47,7 @@ func run(args []string) int {
 
 	password, err := resolvePassword(pwFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 
@@ -71,14 +71,14 @@ func run(args []string) int {
 			return 1
 		}
 		if err := createFile(files[0], password, vaultID); err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
 		return 0
 	case "edit":
 		for _, f := range files {
 			if err := editFile(f, password); err != nil {
-				fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+				fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 				return 1
 			}
 		}
@@ -90,7 +90,7 @@ func run(args []string) int {
 		}
 		newPassword, err := vaultpw.Resolve(newPwFile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
 		return rekeyFiles(files, password, newPassword, vaultID)
@@ -169,7 +169,7 @@ func encryptFiles(files []string, password, vaultID string) int {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
@@ -180,12 +180,12 @@ func encryptFiles(files []string, password, vaultID string) int {
 		}
 		enc, err := vault.Encrypt(data, password, vaultID)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
 		if err := os.WriteFile(path, []byte(enc), 0o600); err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
@@ -199,18 +199,18 @@ func decryptFiles(files []string, password string) int {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
 		plain, err := vault.Decrypt(string(data), password)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
 		if err := os.WriteFile(path, plain, 0o600); err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
@@ -226,12 +226,12 @@ func viewFile(files []string, password string) int {
 	}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 	plain, err := vault.Decrypt(string(data), password)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 	os.Stdout.Write(plain)
@@ -247,7 +247,7 @@ func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
@@ -269,7 +269,7 @@ func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
 			continue
 		}
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			code = 1
 			continue
 		}
@@ -336,14 +336,14 @@ func encryptString(args []string) int {
 
 	password, err := vaultpw.Resolve(pwFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 
 	for _, secret := range secrets {
 		text, err := vault.Encrypt([]byte(secret), password, vaultID)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-vault:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
 		if name != "" {

@@ -10,8 +10,9 @@ import (
 	"strings"
 
 	"github.com/go-ansible/cli/internal/adhoc"
+	"github.com/go-ansible/cli/internal/invload"
 	"github.com/go-ansible/cli/internal/version"
-	"github.com/go-ansible/inventory"
+	"github.com/go-ansible/playbook"
 )
 
 func main() {
@@ -40,7 +41,7 @@ func run(args []string) int {
 	// either way.
 	pattern, flagArgs, err := extractPattern(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		fs.Usage()
 		return 2
 	}
@@ -51,24 +52,35 @@ func run(args []string) int {
 		fmt.Println(version.String("ansible"))
 		return 0
 	}
-	if *inventoryPath == "" || pattern == "" {
+	// -i is NOT required: `ansible localhost -m ping` with no
+	// inventory at all is one of real's most ordinary invocations, and
+	// it works there because the implicit localhost always exists.
+	if pattern == "" {
 		fs.Usage()
 		return 2
 	}
 
-	inv, err := inventory.Load(*inventoryPath)
+	// One Warner for the process, as real has one Display.
+	warn := playbook.NewWarner(os.Stderr)
+
+	// An unusable inventory is a warning, not a failure — see invload.
+	// Ad-hoc resolves against the USER's pattern, not "all", which is
+	// what suppresses the empty-inventory warning for `localhost`.
+	inv := invload.Load(*inventoryPath, "", pattern, warn)
+
+	hosts, unmatched, err := inv.MatchReport(pattern)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
-	hosts, err := inv.Match(pattern)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible:", err)
-		return 1
+	for _, term := range unmatched {
+		warn("Could not match supplied host pattern, ignoring: " + term)
 	}
+	// A pattern that matched nothing is not an error: real warns and
+	// exits 0, having run the module on no hosts. Measured —
+	// `ansible -i /nope.ini h1 -m ping` exits 0 there and 1 here.
 	if len(hosts) == 0 {
-		fmt.Fprintf(os.Stderr, "ansible: pattern %q matched no hosts\n", pattern)
-		return 1
+		return 0
 	}
 
 	moduleArgsMap := adhoc.ParseModuleArgs(*moduleName, *moduleArgs)

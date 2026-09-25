@@ -43,7 +43,7 @@ func run(args []string) int {
 
 	opts, playbookName, err := parsePullFlags(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		usage()
 		return 2
 	}
@@ -59,7 +59,7 @@ func run(args []string) int {
 
 	changed, err := syncRepo(dest, opts.url, opts.checkout)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 	if opts.onlyIfChanged && !changed {
@@ -71,19 +71,19 @@ func run(args []string) int {
 
 	extra, err := extravars.Parse(opts.extraVars)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 2
 	}
 
 	inv, err := loadOrDefaultInventory(opts.inventoryPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 
 	pb, err := playbook.ParseFile(pbPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		if opts.purge {
 			os.RemoveAll(dest)
 		}
@@ -102,7 +102,7 @@ func run(args []string) int {
 
 	code := 0
 	if runErr != nil {
-		fmt.Fprintln(os.Stderr, "ansible-pull:", runErr)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", runErr)
 		code = 1
 	} else if rr != nil && rr.Failed() {
 		code = 2
