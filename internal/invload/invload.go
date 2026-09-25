@@ -41,7 +41,9 @@ const (
 // replacement that exits 1 instead breaks the script around it.
 //
 // pattern is the host pattern the caller will select with — "all" for
-// ansible-playbook, the user's own pattern for ad-hoc ansible. It is
+// ansible-playbook, the user's own pattern for ad-hoc ansible, and ""
+// for a caller that resolves no host list at all (ansible-inventory),
+// which suppresses the empty-inventory warning entirely. It is
 // needed because real suppresses the empty-inventory warning when the
 // pattern is one the implicit localhost answers to (C.LOCALHOST):
 // measured, `ansible -i /nope.ini localhost -m ping` prints two
@@ -54,7 +56,12 @@ func Load(path, vaultPassword, pattern string, warn playbook.Warner) *inventory.
 	if !parsed {
 		warn(noneParsed)
 	}
-	if len(inv.Hosts) == 0 {
+	// An EMPTY pattern means the caller resolves no host list at all,
+	// and then this warning does not belong to it: it comes from
+	// real's CLI.get_host_list, which ansible-inventory never calls.
+	// Measured — ansible-inventory --list, --host and --graph on an
+	// unreadable source each print two warnings, not three.
+	if pattern != "" && len(inv.Hosts) == 0 {
 		if hosts, err := inv.Match(pattern); err != nil || len(hosts) == 0 {
 			warn(emptyHostsList)
 		}

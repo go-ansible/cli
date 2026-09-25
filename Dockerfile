@@ -1,4 +1,4 @@
-# Multi-stage, multi-arch build for the five go-ansible CLI binaries.
+# Multi-stage, multi-arch build for every go-ansible CLI binary.
 # The final stage is FROM scratch: a CGO_ENABLED=0 Go binary needs no
 # libc, no interpreter, nothing else — real Ansible fundamentally
 # cannot reach this (it needs Python plus several pip-installed
@@ -34,8 +34,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# The list is DERIVED from ./cmd rather than written out: the header
+# of this file said "five binaries" while eight were listed, and a
+# ninth was added without the list noticing. An enumeration of things
+# that already exist somewhere drifts from them.
 RUN mkdir /out && \
-    for bin in ansible ansible-playbook ansible-vault ansible-galaxy ansible-pull ansible-doc ansible-config ansible-console; do \
+    for dir in ./cmd/*/; do bin=$(basename "$dir"); \
       CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
         go build -trimpath -ldflags="-s -w" -o /out/$bin ./cmd/$bin; \
     done
