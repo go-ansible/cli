@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/go-ansible/inventory v0.15.0
 	github.com/go-ansible/modules v0.52.0
-	github.com/go-ansible/playbook v0.73.0
+	github.com/go-ansible/playbook v0.74.0
 	github.com/go-ansible/template v0.25.0
 	github.com/go-ansible/vault v0.7.0
 	github.com/go-git/go-git/v5 v5.19.2
@@ -23,7 +23,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/go-ansible/facts v0.6.0 // indirect
+	github.com/go-ansible/facts v0.7.0 // indirect
 	github.com/go-ansible/vars v0.1.2 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
