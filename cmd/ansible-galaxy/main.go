@@ -46,7 +46,7 @@ func run(args []string) int {
 
 	reqFile, rolesDir, err := parseInstallFlags(args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-galaxy:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 2
 	}
 	if reqFile == "" {
@@ -56,7 +56,7 @@ func run(args []string) int {
 
 	reqs, err := loadRequirements(reqFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-galaxy:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
 

@@ -59,13 +59,13 @@ func run(args []string, in io.Reader, out io.Writer) int {
 
 	inv, err := inventory.Load(*inventoryPath)
 	if err != nil {
-		fmt.Fprintln(out, "ansible-console:", err)
+		fmt.Fprintln(out, "[ERROR]:", err)
 		return 1
 	}
 
 	s, err := newSession(inv, pattern, out)
 	if err != nil {
-		fmt.Fprintln(out, "ansible-console:", err)
+		fmt.Fprintln(out, "[ERROR]:", err)
 		return 1
 	}
 
@@ -145,7 +145,7 @@ func (s *session) handleLine(line string) (exit bool) {
 			target = strings.Join(fields[1:], " ")
 		}
 		if err := s.setPattern(target); err != nil {
-			fmt.Fprintln(s.out, "ansible-console:", err)
+			fmt.Fprintln(s.out, "[ERROR]:", err)
 		}
 		return false
 	case "become":

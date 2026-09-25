@@ -57,7 +57,8 @@ func TestRunFailure(t *testing.T) {
 	}
 }
 
-func TestRunMissingInventoryOrPlaybook(t *testing.T) {
+// Only the playbook argument is mandatory now: -i is not.
+func TestRunMissingPlaybook(t *testing.T) {
 	if code := run([]string{}); code != 2 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -72,13 +73,27 @@ func TestRunBadFlags(t *testing.T) {
 	}
 }
 
-func TestRunInventoryLoadError(t *testing.T) {
+// An inventory that cannot be read is NOT fatal. Measured against
+// ansible-core 2.21.4: `ansible-playbook -i /nope.ini p.yml` exits 0,
+// warning on stderr and running the play against no hosts. This test
+// previously asserted exit 1 -- our behaviour, not real's.
+func TestRunInventoryLoadErrorIsNotFatal(t *testing.T) {
 	dir := t.TempDir()
 	pb := filepath.Join(dir, "site.yml")
 	writeFile(t, pb, "- hosts: all\n  tasks: []\n")
 	code := run([]string{"-i", filepath.Join(dir, "absent.yml"), pb})
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0: an unusable inventory warns, it does not fail", code)
+	}
+}
+
+// And -i itself is optional, because real runs without one at all.
+func TestRunWithoutInventory(t *testing.T) {
+	dir := t.TempDir()
+	pb := filepath.Join(dir, "site.yml")
+	writeFile(t, pb, "- hosts: all\n  tasks: []\n")
+	if code := run([]string{pb}); code != 0 {
+		t.Fatalf("exit = %d, want 0 with no -i at all", code)
 	}
 }
 

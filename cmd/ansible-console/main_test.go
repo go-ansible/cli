@@ -147,7 +147,7 @@ func TestHandleLineCdBadPatternReportsErrorKeepsOldPattern(t *testing.T) {
 	if s.pattern != "all" {
 		t.Fatalf("pattern = %q, want unchanged \"all\" after a bad cd", s.pattern)
 	}
-	if !strings.Contains(out.String(), "ansible-console:") {
+	if !strings.Contains(out.String(), "[ERROR]:") {
 		t.Fatalf("output = %q, want an error message", out.String())
 	}
 }

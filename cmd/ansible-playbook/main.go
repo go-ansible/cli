@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"github.com/go-ansible/cli/internal/extravars"
+	"github.com/go-ansible/cli/internal/invload"
 	"github.com/go-ansible/cli/internal/version"
-	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
 	"golang.org/x/term"
 )
@@ -83,10 +83,17 @@ func run(args []string) int {
 		fmt.Println(version.String("ansible-playbook"))
 		return 0
 	}
-	if *inventoryPath == "" || len(playbooks) == 0 {
+	// -i is NOT required: real runs without one, on the implicit
+	// localhost alone, and says so in a warning rather than refusing.
+	if len(playbooks) == 0 {
 		fs.Usage()
 		return 2
 	}
+
+	// One Warner for the whole process, as real has one Display: it
+	// deduplicates, so a warning reached from two places is still said
+	// once. The Engine is given this same one below.
+	warn := playbook.NewWarner(os.Stderr)
 
 	// The password is resolved before anything is read, because the
 	// inventory itself may be encrypted. It is only asked for when the
@@ -96,20 +103,19 @@ func run(args []string) int {
 	if *vaultPasswordFile != "" || *askVaultPass {
 		vaultPassword, err = vaultpw.Resolve(*vaultPasswordFile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
 	}
 
-	inv, err := inventory.LoadWithVault(*inventoryPath, vaultPassword)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
-		return 1
-	}
+	// An unusable inventory is a warning, not a failure — see invload.
+	// ansible-playbook always resolves against "all", whatever any
+	// play's own hosts: says, which is the pattern real passes here.
+	inv := invload.Load(*inventoryPath, vaultPassword, "all", warn)
 
 	vars, err := extravars.Parse(extra)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 2
 	}
 
@@ -136,27 +142,28 @@ func run(args []string) int {
 	if *limit != "" {
 		all, aerr := inv.Match("all")
 		if aerr != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", aerr)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", aerr)
 			return 1
 		}
 		targeted, terr := inv.Match(*limit)
 		if terr != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", terr)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", terr)
 			return 1
 		}
 		if len(all) > 0 && len(targeted) == 0 {
-			fmt.Fprintln(os.Stderr, "[WARNING]: Could not match supplied host pattern, ignoring:", *limit)
+			warn("Could not match supplied host pattern, ignoring: " + *limit)
 			fmt.Fprintln(os.Stderr, "[ERROR]: Specified inventory, host pattern and/or --limit leaves us with no hosts to target.")
 			return 1
 		}
 	}
+	e.Warn = warn
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
 
 	failed, unreachable := false, false
 	for _, path := range playbooks {
 		pb, err := playbook.ParseFileWithVault(path, vaultPassword)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			if errors.Is(err, iofs.ErrNotExist) {
 				return 1
 			}
@@ -174,7 +181,7 @@ func run(args []string) int {
 		e.BaseDir = filepath.Dir(path)
 		rr, err := e.RunPlaybook(context.Background(), pb)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "ansible-playbook:", err)
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
 		if rr != nil && rr.Failed() {
