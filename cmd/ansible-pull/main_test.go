@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -300,5 +301,163 @@ func TestRunMissingPlaybookInRepoErrors(t *testing.T) {
 	code := run([]string{"-U", origin, "-d", filepath.Join(dir, "dest"), "--no-color"})
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1 for a missing local.yml in the repo", code)
+	}
+}
+
+// A relative --inventory names a file IN THE CHECKOUT: real runs the
+// playbook with the checkout as its working directory, so `-i hosts`
+// finds the inventory the repository carries. Resolving it against
+// the process's own cwd made the ordinary ansible-pull idiom fail
+// outright with "stat hosts: no such file or directory".
+func TestRelativeInventoryResolvesAgainstTheCheckout(t *testing.T) {
+	if got, want := resolveAgainst("/checkout", "hosts"), filepath.Join("/checkout", "hosts"); got != want {
+		t.Errorf("resolveAgainst = %q, want %q", got, want)
+	}
+	// An absolute path is left alone -- real accepts an inventory
+	// outside the checkout.
+	if got := resolveAgainst("/checkout", "/elsewhere/inv"); got != "/elsewhere/inv" {
+		t.Errorf("absolute path was rewritten to %q", got)
+	}
+	// No inventory at all stays empty, so the caller still falls back
+	// to its implicit localhost.
+	if got := resolveAgainst("/checkout", ""); got != "" {
+		t.Errorf("empty path became %q", got)
+	}
+}
+
+// ansible-pull applies the repository to THIS machine and no other,
+// however wide the playbook's own hosts: is. Measured with a
+// three-host inventory and a play targeting all: real ran on
+// localhost and on this machine's name, and NOT on the third host.
+func TestLocalTargetsNamesThisMachineAndLocalhost(t *testing.T) {
+	got := localTargets()
+	if !strings.HasSuffix(got, ",localhost") && got != "localhost" {
+		t.Fatalf("localTargets = %q, want it to include localhost", got)
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		if !strings.HasPrefix(got, h+",") {
+			t.Errorf("localTargets = %q, want it to start with this host's name %q", got, h)
+		}
+	}
+}
+
+// The clone result is the first thing a pull prints, in the shape
+// real's own git-module task reports it. Captured from
+// ansible-core 2.21.4: a first clone has a null "before" and no
+// remote_url_changed; a later run has both revisions and reports
+// remote_url_changed false.
+func TestReportSyncShapes(t *testing.T) {
+	var out strings.Builder
+	reportSync(&out, syncResult{after: "abc123", changed: true, cloned: true})
+	want := "localhost | CHANGED => {\n    \"after\": \"abc123\",\n    \"before\": null,\n    \"changed\": true\n}\n"
+	if out.String() != want {
+		t.Errorf("first clone:\n%q\nwant\n%q", out.String(), want)
+	}
+
+	out.Reset()
+	reportSync(&out, syncResult{before: "abc123", after: "abc123", changed: false})
+	want = "localhost | SUCCESS => {\n    \"after\": \"abc123\",\n    \"before\": \"abc123\",\n    \"changed\": false,\n    \"remote_url_changed\": false\n}\n"
+	if out.String() != want {
+		t.Errorf("unchanged run:\n%q\nwant\n%q", out.String(), want)
+	}
+
+	// A pull that moved the revision is CHANGED but still carries the
+	// previous one.
+	out.Reset()
+	reportSync(&out, syncResult{before: "old", after: "new", changed: true})
+	got := out.String()
+	if !strings.HasPrefix(got, "localhost | CHANGED => {") || !strings.Contains(got, "\"before\": \"old\"") {
+		t.Errorf("moved revision:\n%q", got)
+	}
+}
+
+// End to end, through run() rather than through the helpers: a
+// repository that carries its own inventory is the ordinary
+// ansible-pull idiom, and `-i hosts` must find the one in the
+// CHECKOUT. Testing resolveAgainst alone does not cover this -- the
+// helper was correct while the caller still passed the raw path, and
+// only a test taking the path the binary takes can tell.
+func TestRunFindsAnInventoryCarriedByTheRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+	dir := t.TempDir()
+	origin := t.TempDir()
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = origin
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init", "--quiet", "--initial-branch=main")
+	marker := filepath.Join(dir, "marker.txt")
+	if err := os.WriteFile(filepath.Join(origin, "local.yml"), []byte(
+		"- hosts: all\n  gather_facts: false\n  tasks:\n    - copy: {content: \"pulled\", dest: "+marker+"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The inventory lives in the REPOSITORY, not where the test runs.
+	if err := os.WriteFile(filepath.Join(origin, "hosts"), []byte("localhost ansible_connection=local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", "local.yml", "hosts")
+	gitCmd("commit", "--quiet", "-m", "initial")
+
+	dest := filepath.Join(dir, "checkout")
+	if code := run([]string{"-U", origin, "-d", dest, "--no-color", "-i", "hosts"}); code != 0 {
+		t.Fatalf("exit = %d, want 0 -- `-i hosts` must resolve inside the checkout", code)
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "pulled" {
+		t.Fatalf("marker = %q, err = %v", data, err)
+	}
+}
+
+// And the limit is applied through run() too: a repository whose
+// inventory names OTHER machines must not have them configured by a
+// pull on this one.
+func TestRunDoesNotTouchOtherHostsInTheInventory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+	dir := t.TempDir()
+	origin := t.TempDir()
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = origin
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init", "--quiet", "--initial-branch=main")
+	// otherbox would be reached by `hosts: all` without the limit, and
+	// writes a file naming itself if it ever runs.
+	stamp := filepath.Join(dir, "{{ inventory_hostname }}.txt")
+	if err := os.WriteFile(filepath.Join(origin, "local.yml"), []byte(
+		"- hosts: all\n  gather_facts: false\n  tasks:\n    - copy: {content: \"ran\", dest: \""+stamp+"\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(origin, "hosts"), []byte(
+		"localhost ansible_connection=local\notherbox ansible_connection=local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", "local.yml", "hosts")
+	gitCmd("commit", "--quiet", "-m", "initial")
+
+	if code := run([]string{"-U", origin, "-d", filepath.Join(dir, "checkout"), "--no-color", "-i", "hosts"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "localhost.txt")); err != nil {
+		t.Errorf("localhost was not configured: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "otherbox.txt")); err == nil {
+		t.Error("otherbox was configured: a pull must apply to THIS machine only")
 	}
 }

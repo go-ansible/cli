@@ -19,9 +19,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/version"
@@ -57,12 +59,13 @@ func run(args []string) int {
 		dest = defaultCheckoutDir(opts.url)
 	}
 
-	changed, err := syncRepo(dest, opts.url, opts.checkout)
+	res, err := syncRepo(dest, opts.url, opts.checkout)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
-	if opts.onlyIfChanged && !changed {
+	reportSync(os.Stdout, res)
+	if opts.onlyIfChanged && !res.changed {
 		fmt.Println("ansible-pull: no change since last run, skipping (--only-if-changed)")
 		return 0
 	}
@@ -75,7 +78,13 @@ func run(args []string) int {
 		return 2
 	}
 
-	inv, err := loadOrDefaultInventory(opts.inventoryPath)
+	// A relative --inventory names a file IN THE CHECKOUT, not in the
+	// directory ansible-pull was run from: real runs the playbook with
+	// the checkout as its working directory, so `-i hosts` finds the
+	// inventory the repository carries. That is the ordinary
+	// ansible-pull idiom, and resolving it here against the process's
+	// own cwd made it fail outright.
+	inv, err := loadOrDefaultInventory(resolveAgainst(dest, opts.inventoryPath))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
@@ -94,6 +103,15 @@ func run(args []string) int {
 	}
 
 	e := playbook.New(inv)
+	// ansible-pull applies the repository to THIS machine and no
+	// other, however wide the playbook's own hosts: is. Real does it
+	// by limiting the run to the local hostname or localhost --
+	// measured with a three-host inventory and a play targeting all:
+	// real ran on localhost and on this machine's name, and NOT on
+	// the third host. Without the limit a pull-mode agent would
+	// configure every host the repository's inventory happens to
+	// name, which is the opposite of what pull mode is for.
+	e.Limit = localTargets()
 	e.ExtraVars = extra
 	e.BaseDir = dest
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !opts.noColor)}
@@ -212,16 +230,37 @@ func defaultCheckoutDir(url string) string {
 // a branch/tag/commit, it's resolved and checked out after the
 // clone/pull. changed reports whether HEAD moved (or this was a fresh
 // clone) — the signal --only-if-changed needs.
-func syncRepo(dest, url, checkoutRef string) (changed bool, err error) {
+// syncResult is what the clone or pull did, in the shape real's own
+// git-module task reports: the revision before and after, and whether
+// they differ. before is empty on a first clone, which real prints as
+// a JSON null.
+type syncResult struct {
+	before  string
+	after   string
+	changed bool
+	// cloned distinguishes a first clone from a pull. Real reports
+	// remote_url_changed on a pull and not on a clone.
+	cloned bool
+}
+
+func syncRepo(dest, url, checkoutRef string) (res syncResult, err error) {
 	repo, err := git.PlainOpen(dest)
 	if err != nil {
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return false, fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
+			return res, fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
 		}
-		if _, err := git.PlainClone(dest, false, &git.CloneOptions{URL: url}); err != nil {
-			return false, fmt.Errorf("cloning %s: %w", url, err)
+		cloned, err := git.PlainClone(dest, false, &git.CloneOptions{URL: url})
+		if err != nil {
+			return res, fmt.Errorf("cloning %s: %w", url, err)
 		}
-		return true, checkoutIfNeeded(dest, checkoutRef)
+		if err := checkoutIfNeeded(dest, checkoutRef); err != nil {
+			return res, err
+		}
+		res = syncResult{changed: true, cloned: true}
+		if head, err := cloned.Head(); err == nil {
+			res.after = head.Hash().String()
+		}
+		return res, nil
 	}
 
 	head, err := repo.Head()
@@ -232,14 +271,14 @@ func syncRepo(dest, url, checkoutRef string) (changed bool, err error) {
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		return false, fmt.Errorf("opening worktree: %w", err)
+		return res, fmt.Errorf("opening worktree: %w", err)
 	}
 	if err := wt.Pull(&git.PullOptions{}); err != nil && err != git.NoErrAlreadyUpToDate {
-		return false, fmt.Errorf("pulling %s: %w", url, err)
+		return res, fmt.Errorf("pulling %s: %w", url, err)
 	}
 
 	if err := checkoutIfNeeded(dest, checkoutRef); err != nil {
-		return false, err
+		return res, err
 	}
 
 	head, err = repo.Head()
@@ -247,7 +286,33 @@ func syncRepo(dest, url, checkoutRef string) (changed bool, err error) {
 	if err == nil {
 		afterHash = head.Hash()
 	}
-	return beforeHash != afterHash, nil
+	return syncResult{
+		before:  beforeHash.String(),
+		after:   afterHash.String(),
+		changed: beforeHash != afterHash,
+	}, nil
+}
+
+// reportSync prints what the clone or pull did, in the shape real's
+// git-module task reports it -- the first thing an ansible-pull run
+// prints, before the playbook it then runs.
+func reportSync(w io.Writer, res syncResult) {
+	status := "SUCCESS"
+	if res.changed {
+		status = "CHANGED"
+	}
+	fmt.Fprintf(w, "localhost | %s => {\n", status)
+	if res.before == "" {
+		fmt.Fprint(w, "    \"after\": "+strconv.Quote(res.after)+",\n    \"before\": null,\n")
+	} else {
+		fmt.Fprint(w, "    \"after\": "+strconv.Quote(res.after)+",\n    \"before\": "+strconv.Quote(res.before)+",\n")
+	}
+	fmt.Fprintf(w, "    \"changed\": %t", res.changed)
+	if !res.cloned {
+		// Real reports this on a pull and not on a first clone.
+		fmt.Fprint(w, ",\n    \"remote_url_changed\": false")
+	}
+	fmt.Fprint(w, "\n}\n")
 }
 
 func checkoutIfNeeded(dest, ref string) error {
@@ -283,4 +348,27 @@ func loadOrDefaultInventory(path string) (*inventory.Inventory, error) {
 	inv := inventory.New()
 	inv.AddHost("localhost", map[string]any{"ansible_connection": "local"})
 	return inv, nil
+}
+
+// resolveAgainst makes a relative path relative to base, and leaves an
+// absolute one alone -- real accepts an --inventory outside the
+// checkout that way.
+func resolveAgainst(base, path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(base, path)
+}
+
+// localTargets is the pattern ansible-pull limits every run to: this
+// machine by name, or localhost. The two are a union because an
+// inventory may name either, and real warns about whichever of them
+// it cannot match rather than failing -- which is why the limit is
+// safe to apply even to an inventory that knows nothing about this
+// host.
+func localTargets() string {
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h + ",localhost"
+	}
+	return "localhost"
 }
