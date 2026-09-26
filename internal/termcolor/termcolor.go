@@ -18,7 +18,16 @@ import (
 //	ANSIBLE_FORCE_COLOR=1, redirected colour
 //	ANSIBLE_NOCOLOR=1                 no colour
 //	NO_COLOR=1                        no colour
-//	NO_COLOR=1 and FORCE_COLOR=1      no colour -- refusing wins
+//	NO_COLOR=1 and FORCE_COLOR=1      COLOUR -- the demand wins
+//	ANSIBLE_NOCOLOR=1 and FORCE=1     COLOUR -- likewise
+//
+// That last pair is the opposite of what this file said a version
+// ago, and the correction is worth recording. The first measurement
+// passed both variables as ONE unquoted shell parameter, and zsh does
+// not word-split an unquoted parameter: env received a single
+// malformed assignment, NO_COLOR was never set, and the run was read
+// as "refusing wins". The binary corpus, which passes them as
+// separate words, disagreed within the hour.
 //
 // noColorFlag is the binary's own --no-color, which forces it off
 // whatever the environment says.
@@ -32,13 +41,15 @@ func Enabled(f *os.File, noColorFlag bool) bool {
 	if noColorFlag {
 		return false
 	}
-	// A refusal beats a demand: NO_COLOR is a cross-tool convention
-	// and real honours it over its own ANSIBLE_FORCE_COLOR.
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("ANSIBLE_NOCOLOR") != "" {
-		return false
-	}
+	// The DEMAND beats the refusal, measured both ways round. Real
+	// checks ANSIBLE_FORCE_COLOR first and returns on it, so NO_COLOR
+	// never gets a say -- whatever one might expect of the cross-tool
+	// convention.
 	if os.Getenv("ANSIBLE_FORCE_COLOR") != "" {
 		return true
+	}
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("ANSIBLE_NOCOLOR") != "" {
+		return false
 	}
 	return term.IsTerminal(int(f.Fd()))
 }

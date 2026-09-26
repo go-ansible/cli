@@ -26,10 +26,15 @@ func TestEnabled(t *testing.T) {
 		{"ANSIBLE_FORCE_COLOR", map[string]string{"ANSIBLE_FORCE_COLOR": "1"}, false, true},
 		{"ANSIBLE_NOCOLOR", map[string]string{"ANSIBLE_NOCOLOR": "1"}, false, false},
 		{"NO_COLOR", map[string]string{"NO_COLOR": "1"}, false, false},
-		// A refusal beats a demand -- real honours the cross-tool
-		// convention over its own variable.
-		{"NO_COLOR beats FORCE", map[string]string{"NO_COLOR": "1", "ANSIBLE_FORCE_COLOR": "1"}, false, false},
-		// And the binary's own flag beats everything.
+		// The DEMAND wins, measured both ways round. An earlier
+		// version of this table said the opposite, from a measurement
+		// where zsh had not split the two variables apart and
+		// NO_COLOR was never actually set.
+		{"FORCE beats NO_COLOR", map[string]string{"NO_COLOR": "1", "ANSIBLE_FORCE_COLOR": "1"}, false, true},
+		{"FORCE beats ANSIBLE_NOCOLOR", map[string]string{"ANSIBLE_NOCOLOR": "1", "ANSIBLE_FORCE_COLOR": "1"}, false, true},
+		// The binary's own --no-color still beats everything. It is
+		// this port's extension: real's ansible-playbook has no such
+		// flag and exits 2 on it.
 		{"--no-color beats FORCE", map[string]string{"ANSIBLE_FORCE_COLOR": "1"}, true, false},
 	}
 	for _, tc := range cases {
