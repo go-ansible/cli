@@ -4,8 +4,8 @@ go 1.26.4
 
 require (
 	github.com/go-ansible/inventory v0.18.0
-	github.com/go-ansible/modules v0.53.0
-	github.com/go-ansible/playbook v0.85.0
+	github.com/go-ansible/modules v0.55.0
+	github.com/go-ansible/playbook v0.86.0
 	github.com/go-ansible/template v0.25.0
 	github.com/go-ansible/vault v0.7.0
 	github.com/go-git/go-git/v5 v5.19.2
@@ -50,3 +50,7 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
+
+replace github.com/go-ansible/playbook => /Users/david_delavennat/Documents/VCS/GIT/github.com/go-ansible/playbook
+
+replace github.com/go-ansible/modules => /Users/david_delavennat/Documents/VCS/GIT/github.com/go-ansible/modules
