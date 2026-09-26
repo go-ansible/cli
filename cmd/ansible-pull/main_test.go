@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // initPullTestRepo creates a real local git repository containing a
@@ -329,15 +330,60 @@ func TestRelativeInventoryResolvesAgainstTheCheckout(t *testing.T) {
 // however wide the playbook's own hosts: is. Measured with a
 // three-host inventory and a play targeting all: real ran on
 // localhost and on this machine's name, and NOT on the third host.
-func TestLocalTargetsNamesThisMachineAndLocalhost(t *testing.T) {
+// Real's own shape (ansible/cli/pull.py): localhost, then the names
+// this machine answers to, then 127.0.0.1. An earlier version of this
+// test asserted a two-term pattern of this port's own devising.
+func TestLocalTargetsHasRealsShape(t *testing.T) {
 	got := localTargets()
-	if !strings.HasSuffix(got, ",localhost") && got != "localhost" {
-		t.Fatalf("localTargets = %q, want it to include localhost", got)
+	terms := strings.Split(got, ",")
+	if terms[0] != "localhost" {
+		t.Errorf("first term = %q, want localhost: %q", terms[0], got)
+	}
+	if terms[len(terms)-1] != "127.0.0.1" {
+		t.Errorf("last term = %q, want 127.0.0.1: %q", terms[len(terms)-1], got)
 	}
 	if h, err := os.Hostname(); err == nil && h != "" {
-		if !strings.HasPrefix(got, h+",") {
-			t.Errorf("localTargets = %q, want it to start with this host's name %q", got, h)
+		if !strings.Contains(got, ","+h+",") {
+			t.Errorf("localTargets = %q, want this host's name %q among the terms", got, h)
 		}
+	}
+	// No term twice: real joins a SET, and a hostname with no dot
+	// contributes the same name twice before deduplication.
+	seen := map[string]bool{}
+	for _, tm := range terms {
+		if seen[tm] {
+			t.Errorf("term %q appears twice in %q", tm, got)
+		}
+		seen[tm] = true
+	}
+}
+
+// A dotted hostname contributes its short form as well, which is how
+// an inventory naming the machine either way is still reached.
+func TestLocalTargetsIncludesTheShortName(t *testing.T) {
+	// localTargets reads the real hostname, so this asserts the rule
+	// through the same helper it uses rather than by faking one.
+	h, err := os.Hostname()
+	if err != nil || !strings.Contains(h, ".") {
+		t.Skip("this machine's hostname has no dot; nothing to shorten")
+	}
+	short, _, _ := strings.Cut(h, ".")
+	if !strings.Contains(localTargets(), ","+short+",") {
+		t.Errorf("localTargets = %q, want the short name %q", localTargets(), short)
+	}
+}
+
+// Real prints these two lines before it does anything else: when the
+// run started, and the command line that started it. A pull is read
+// out of a log later, where they are the only record of which
+// invocation produced what follows.
+func TestAnnounce(t *testing.T) {
+	var out strings.Builder
+	when := time.Date(2026, 9, 26, 10, 8, 52, 0, time.UTC)
+	announce(&out, when, []string{"/usr/local/bin/ansible-pull", "-U", "file:///r", "-i", "hosts"})
+	want := "Starting Ansible Pull at 2026-09-26 10:08:52\n/usr/local/bin/ansible-pull -U file:///r -i hosts\n"
+	if out.String() != want {
+		t.Errorf("announce =\n%q\nwant\n%q", out.String(), want)
 	}
 }
 

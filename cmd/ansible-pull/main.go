@@ -24,6 +24,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/termcolor"
@@ -59,6 +61,8 @@ func run(args []string) int {
 	if dest == "" {
 		dest = defaultCheckoutDir(opts.url)
 	}
+
+	announce(os.Stdout, time.Now(), os.Args)
 
 	res, err := syncRepo(dest, opts.url, opts.checkout)
 	if err != nil {
@@ -113,6 +117,13 @@ func run(args []string) int {
 	// configure every host the repository's inventory happens to
 	// name, which is the opposite of what pull mode is for.
 	e.Limit = localTargets()
+	// A pull's warnings go to STDOUT, not stderr. Real runs the work
+	// as subprocesses and forwards everything they write to its own
+	// stdout -- measured: its stderr is empty and the host-pattern
+	// warnings appear among the stdout lines. A reader of a pull log
+	// therefore has one stream, in order, which is what makes an
+	// unattended run readable afterwards.
+	e.Warn = playbook.NewWarner(os.Stdout)
 	e.ExtraVars = extra
 	e.BaseDir = dest
 	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, termcolor.Enabled(os.Stdout, opts.noColor))}
@@ -361,15 +372,54 @@ func resolveAgainst(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// localTargets is the pattern ansible-pull limits every run to: this
-// machine by name, or localhost. The two are a union because an
-// inventory may name either, and real warns about whichever of them
-// it cannot match rather than failing -- which is why the limit is
-// safe to apply even to an inventory that knows nothing about this
+// localTargets is the pattern ansible-pull limits every run to. Real
+// builds it from four names and two constants (ansible/cli/pull.py):
+//
+//	set(fqdn, node, fqdn-before-the-first-dot, node-before-the-dot)
+//	wrapped as  localhost,<those>,127.0.0.1
+//
+// so an inventory may name this machine any of the ways a machine is
+// usually named and still be reached. Real warns about whichever
+// terms it cannot match rather than failing, which is what makes the
+// limit safe to apply to an inventory that knows nothing about this
 // host.
+//
+// Two differences from real, both stated rather than papered over:
+//
+//   - real's fqdn comes from socket.getfqdn(), which performs a DNS
+//     lookup; this uses os.Hostname(), which does not. On a machine
+//     whose resolver returns a longer name than its hostname, real
+//     limits to one more term than this does.
+//   - real joins a Python SET, whose iteration order for strings
+//     varies between processes. Its own term order is therefore not
+//     reproducible -- not by this port, and not by real itself from
+//     one run to the next. This emits them in a fixed order, which is
+//     the only stable choice available.
 func localTargets() string {
-	if h, err := os.Hostname(); err == nil && h != "" {
-		return h + ",localhost"
+	names := []string{}
+	seen := map[string]bool{}
+	add := func(n string) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
 	}
-	return "localhost"
+	if h, err := os.Hostname(); err == nil {
+		add(h)
+		if short, _, found := strings.Cut(h, "."); found {
+			add(short)
+		}
+	}
+	out := append([]string{"localhost"}, names...)
+	return strings.Join(append(out, "127.0.0.1"), ",")
+}
+
+// announce prints what real prints before it does anything else: when
+// the run started, and the command line that started it. A pull runs
+// unattended and its output is usually read later out of a log, where
+// those two lines are the only record of which invocation produced
+// what follows.
+func announce(w io.Writer, now time.Time, argv []string) {
+	fmt.Fprintf(w, "Starting Ansible Pull at %s\n", now.Format("2006-01-02 15:04:05"))
+	fmt.Fprintln(w, strings.Join(argv, " "))
 }
