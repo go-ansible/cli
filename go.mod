@@ -50,7 +50,3 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
-
-replace github.com/go-ansible/playbook => /Users/david_delavennat/Documents/VCS/GIT/github.com/go-ansible/playbook
-
-replace github.com/go-ansible/modules => /Users/david_delavennat/Documents/VCS/GIT/github.com/go-ansible/modules
