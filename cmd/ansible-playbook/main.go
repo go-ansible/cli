@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/invload"
+	"github.com/go-ansible/cli/internal/termcolor"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
 	"golang.org/x/term"
@@ -157,7 +158,7 @@ func run(args []string) int {
 		}
 	}
 	e.Warn = warn
-	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !*noColor)}
+	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, termcolor.Enabled(os.Stdout, *noColor))}
 
 	failed, unreachable := false, false
 	for _, path := range playbooks {

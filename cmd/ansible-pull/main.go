@@ -26,6 +26,7 @@ import (
 	"strconv"
 
 	"github.com/go-ansible/cli/internal/extravars"
+	"github.com/go-ansible/cli/internal/termcolor"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
@@ -114,7 +115,7 @@ func run(args []string) int {
 	e.Limit = localTargets()
 	e.ExtraVars = extra
 	e.BaseDir = dest
-	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, !opts.noColor)}
+	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, termcolor.Enabled(os.Stdout, opts.noColor))}
 
 	rr, runErr := e.RunPlaybook(context.Background(), pb)
 
