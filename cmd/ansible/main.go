@@ -13,6 +13,8 @@ import (
 	"github.com/go-ansible/cli/internal/invload"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -31,8 +33,15 @@ func run(args []string) int {
 	fs.BoolVar(become, "become", false, "run with privilege escalation")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: ansible PATTERN -i INVENTORY -m MODULE [-a ARGS] [-b]")
+		fmt.Fprintln(fs.Output(), "usage: ansible PATTERN -i INVENTORY -m MODULE [-a ARGS] [-b]")
 		fs.PrintDefaults()
+	}
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		fs.SetOutput(os.Stdout)
+		fs.Usage()
+		return 0
 	}
 	// Ansible's real invocation puts the pattern first (`ansible all -i
 	// ... -m ...`), but Go's flag package stops parsing at the first

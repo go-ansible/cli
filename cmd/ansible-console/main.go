@@ -27,6 +27,8 @@ import (
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/modules"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -40,12 +42,24 @@ func run(args []string, in io.Reader, out io.Writer) int {
 	}
 
 	fs := flag.NewFlagSet("ansible-console", flag.ContinueOnError)
-	fs.SetOutput(out)
+	// A usage ERROR goes to stderr, as real's does -- not to the
+	// console's own output stream. Pointing the FlagSet at `out` sent
+	// "flag provided but not defined" to STDOUT, which is where the
+	// session's transcript goes, so a caller piping the session got the
+	// error mixed into it.
+	fs.SetOutput(os.Stderr)
 	inventoryPath := fs.String("i", "", "inventory file or directory (also --inventory)")
 	fs.StringVar(inventoryPath, "inventory", "", "inventory file or directory")
 	fs.Usage = func() {
-		fmt.Fprintln(out, "usage: ansible-console -i INVENTORY [PATTERN]")
+		fmt.Fprintln(fs.Output(), "usage: ansible-console -i INVENTORY [PATTERN]")
 		fs.PrintDefaults()
+	}
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		fs.SetOutput(os.Stdout)
+		fs.Usage()
+		return 0
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
