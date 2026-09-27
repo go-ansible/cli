@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/go-ansible/inventory v0.18.0
 	github.com/go-ansible/modules v0.59.0
-	github.com/go-ansible/playbook v0.95.0
+	github.com/go-ansible/playbook v0.96.0
 	github.com/go-ansible/template v0.27.0
 	github.com/go-ansible/vault v0.7.0
 	github.com/go-git/go-git/v5 v5.19.2
