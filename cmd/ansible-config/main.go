@@ -16,10 +16,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -27,12 +30,18 @@ func main() {
 }
 
 func run(args []string) int {
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		usage.Answer(usageText)
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Println(version.String("ansible-config"))
 		return 0
 	}
 	if len(args) < 1 {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -47,13 +56,13 @@ func run(args []string) int {
 		return runView()
 	default:
 		fmt.Fprintf(os.Stderr, "ansible-config: unknown subcommand: %s\n", args[0])
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ansible-config {list|dump|view}")
+func usageText(w io.Writer) {
+	fmt.Fprintln(w, "usage: ansible-config {list|dump|view}")
 }
 
 func printList() {

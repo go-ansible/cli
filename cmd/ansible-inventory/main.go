@@ -20,6 +20,8 @@ import (
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -47,8 +49,15 @@ func run(args []string) int {
 	tomlOut := fs.Bool("toml", false, "use TOML format instead of default JSON (not implemented)")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: ansible-inventory [-i INVENTORY] --list | --host HOST | --graph")
+		fmt.Fprintln(fs.Output(), "usage: ansible-inventory [-i INVENTORY] --list | --host HOST | --graph")
 		fs.PrintDefaults()
+	}
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		fs.SetOutput(os.Stdout)
+		fs.Usage()
+		return 0
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2

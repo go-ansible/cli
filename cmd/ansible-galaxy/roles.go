@@ -155,7 +155,7 @@ func runRemove(args []string) int {
 		return 2
 	}
 	if len(names) == 0 {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 	paths := rolesSearchPath(explicit)

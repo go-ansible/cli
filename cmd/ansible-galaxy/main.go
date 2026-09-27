@@ -9,6 +9,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -16,6 +17,8 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"gopkg.in/yaml.v3"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 // Requirements is a requirements.yml document's `roles:` list.
@@ -35,20 +38,26 @@ func main() {
 }
 
 func run(args []string) int {
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		usage.Answer(usageText)
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Println(version.String("ansible-galaxy"))
 		return 0
 	}
 	switch {
 	case len(args) < 1:
-		usage()
+		usageText(os.Stderr)
 		return 2
 	case args[0] == "list":
 		return runList(args[1:])
 	case args[0] == "remove":
 		return runRemove(args[1:])
 	case args[0] != "install":
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -58,7 +67,7 @@ func run(args []string) int {
 		return 2
 	}
 	if reqFile == "" {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -80,10 +89,10 @@ func run(args []string) int {
 	return code
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ansible-galaxy install -r requirements.yml [-p roles/]")
-	fmt.Fprintln(os.Stderr, "       ansible-galaxy list [-p roles/] [ROLE]")
-	fmt.Fprintln(os.Stderr, "       ansible-galaxy remove [-p roles/] ROLE...")
+func usageText(w io.Writer) {
+	fmt.Fprintln(w, "usage: ansible-galaxy install -r requirements.yml [-p roles/]")
+	fmt.Fprintln(w, "       ansible-galaxy list [-p roles/] [ROLE]")
+	fmt.Fprintln(w, "       ansible-galaxy remove [-p roles/] ROLE...")
 }
 
 func parseInstallFlags(args []string) (reqFile, rolesDir string, err error) {

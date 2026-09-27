@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"github.com/go-ansible/cli/internal/vaultpw"
 	"golang.org/x/term"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/vault"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -18,12 +21,18 @@ func main() {
 }
 
 func run(args []string) int {
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		usage.Answer(usageText)
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Println(version.String("ansible-vault"))
 		return 0
 	}
 	if len(args) < 1 {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 	sub, rest := args[0], args[1:]
@@ -41,7 +50,7 @@ func run(args []string) int {
 		return 2
 	}
 	if len(files) == 0 {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -95,13 +104,13 @@ func run(args []string) int {
 		}
 		return rekeyFiles(files, password, newPassword, vaultID)
 	default:
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `usage:
+func usageText(w io.Writer) {
+	fmt.Fprintln(w, `usage:
   ansible-vault encrypt FILE [FILE2 ...] --vault-password-file=PATH [--vault-id=NAME]
   ansible-vault decrypt FILE [FILE2 ...] --vault-password-file=PATH
   ansible-vault view FILE --vault-password-file=PATH

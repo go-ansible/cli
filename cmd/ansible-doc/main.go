@@ -15,12 +15,15 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/modules"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -28,6 +31,12 @@ func main() {
 }
 
 func run(args []string) int {
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		usage.Answer(usageText)
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Println(version.String("ansible-doc"))
 		return 0
@@ -42,7 +51,7 @@ func run(args []string) int {
 		default:
 			if len(a) > 0 && a[0] == '-' {
 				fmt.Fprintln(os.Stderr, "ansible-doc: unrecognized argument:", a)
-				usage()
+				usageText(os.Stderr)
 				return 2
 			}
 			names = append(names, a)
@@ -61,7 +70,7 @@ func run(args []string) int {
 	}
 
 	if len(names) == 0 {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -80,8 +89,8 @@ func run(args []string) int {
 	return code
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ansible-doc [-l | --list] [MODULE ...]")
+func usageText(w io.Writer) {
+	fmt.Fprintln(w, "usage: ansible-doc [-l | --list] [MODULE ...]")
 }
 
 func printList(r *modules.Registry) {

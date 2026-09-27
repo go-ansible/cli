@@ -34,6 +34,8 @@ import (
 	"github.com/go-ansible/playbook"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 func main() {
@@ -41,6 +43,12 @@ func main() {
 }
 
 func run(args []string) int {
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		usage.Answer(usageText)
+		return 0
+	}
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Println(version.String("ansible-pull"))
 		return 0
@@ -49,11 +57,11 @@ func run(args []string) int {
 	opts, playbookName, err := parsePullFlags(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 	if opts.url == "" {
-		usage()
+		usageText(os.Stderr)
 		return 2
 	}
 
@@ -144,8 +152,8 @@ func run(args []string) int {
 	return code
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ansible-pull -U REPO_URL [-C CHECKOUT] [-d DIR] [-i INVENTORY] [-e KEY=VAL ...] [--only-if-changed] [--purge] [--no-color] [PLAYBOOK.yml]")
+func usageText(w io.Writer) {
+	fmt.Fprintln(w, "usage: ansible-pull -U REPO_URL [-C CHECKOUT] [-d DIR] [-i INVENTORY] [-e KEY=VAL ...] [--only-if-changed] [--purge] [--no-color] [PLAYBOOK.yml]")
 }
 
 type pullOptions struct {

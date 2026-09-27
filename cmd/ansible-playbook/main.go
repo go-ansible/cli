@@ -20,6 +20,8 @@ import (
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
 	"golang.org/x/term"
+
+	"github.com/go-ansible/cli/internal/usage"
 )
 
 type stringList []string
@@ -73,8 +75,15 @@ func run(args []string) int {
 	fs.BoolVar(askVaultPass, "ask-vault-pass", false, "prompt for the vault password")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
+		fmt.Fprintln(fs.Output(), "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
 		fs.PrintDefaults()
+	}
+	// -h/--help is a SUCCESSFUL request: real answers it on stdout with
+	// status 0, where a usage ERROR goes to stderr with status 2.
+	if usage.Wanted(args) {
+		fs.SetOutput(os.Stdout)
+		fs.Usage()
+		return 0
 	}
 	playbooks, err := parseInterspersed(fs, args)
 	if err != nil {
