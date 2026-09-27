@@ -57,7 +57,13 @@ func TestRunListPrintsAllThreeSettings(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	for _, want := range []string{"remote_user", "host_key_checking", "timeout", "ANSIBLE_REMOTE_USER", "ANSIBLE_HOST_KEY_CHECKING", "ANSIBLE_TIMEOUT"} {
+	// Real's canonical names, which is what ansible-config prints.
+	for _, want := range []string{
+		"DEFAULT_REMOTE_USER", "HOST_KEY_CHECKING", "DEFAULT_TIMEOUT",
+		"ANSIBLE_REMOTE_USER", "ANSIBLE_HOST_KEY_CHECKING", "ANSIBLE_TIMEOUT",
+		// The listing metadata real's own list carries.
+		"section: defaults", "type: boolean", "description:",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}
@@ -70,8 +76,9 @@ func TestRunDumpShowsDefaultByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out, "host_key_checking(default) = true") {
-		t.Fatalf("dump output = %q, want host_key_checking at its default", out)
+	// Real's name, and Python's spelling of the boolean.
+	if !strings.Contains(out, "HOST_KEY_CHECKING(default) = True") {
+		t.Fatalf("dump output = %q, want HOST_KEY_CHECKING at its default", out)
 	}
 }
 
@@ -82,8 +89,8 @@ func TestRunDumpShowsEnvOverrideOrigin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out, "timeout(env: ANSIBLE_TIMEOUT) = 99") {
-		t.Fatalf("dump output = %q, want timeout attributed to its env var", out)
+	if !strings.Contains(out, "DEFAULT_TIMEOUT(env: ANSIBLE_TIMEOUT) = 99") {
+		t.Fatalf("dump output = %q, want the timeout attributed to its env var", out)
 	}
 }
 
@@ -122,12 +129,13 @@ func TestRunDumpShowsConfigFileOrigin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out, "remote_user(cfg: ") || !strings.Contains(out, "= cfguser") {
-		t.Fatalf("dump output = %q, want remote_user attributed to the config file", out)
+	// Real spells an ini origin as the PATH ALONE, not "cfg: <path>".
+	if !strings.Contains(out, "DEFAULT_REMOTE_USER(") || !strings.Contains(out, "ansible.cfg) = cfguser") {
+		t.Fatalf("dump output = %q, want DEFAULT_REMOTE_USER attributed to the config file by path", out)
 	}
 	// A setting the file doesn't set must NOT be attributed to the file
 	// just because one exists — real regression this test locks in.
-	if !strings.Contains(out, "timeout(default) = 10") {
+	if !strings.Contains(out, "DEFAULT_TIMEOUT(default) = 10") {
 		t.Fatalf("dump output = %q, want timeout still at its default (the file doesn't set it)", out)
 	}
 }
