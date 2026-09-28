@@ -5,8 +5,8 @@ go 1.26.4
 require (
 	github.com/go-ansible/inventory v0.18.0
 	github.com/go-ansible/modules v0.66.0
-	github.com/go-ansible/playbook v0.105.0
-	github.com/go-ansible/template v0.27.0
+	github.com/go-ansible/playbook v0.106.0
+	github.com/go-ansible/template v0.28.0
 	github.com/go-ansible/vault v0.7.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-remoteexec/transport v0.1.7
@@ -36,7 +36,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/nikolalohinski/gonja/v2 v2.9.0 // indirect
+	github.com/nikolalohinski/gonja/v2 v2.9.1 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
