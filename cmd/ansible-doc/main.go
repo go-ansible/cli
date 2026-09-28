@@ -62,8 +62,20 @@ func run(args []string) int {
 
 	if list {
 		if len(names) > 0 {
-			fmt.Fprintln(os.Stderr, "ansible-doc: -l/--list takes no module names")
-			return 2
+			// -l reads a positional as a COLLECTION to list, not a
+			// module, and refuses one that is not namespace.name --
+			// measured: `ansible-doc -l debug` gives this sentence and
+			// exit 1, where this port gave its own message and exit 2.
+			for _, n := range names {
+				if !strings.Contains(n, ".") {
+					fmt.Fprintf(os.Stderr, "[ERROR]: Invalid collection name (must be of the form namespace.collection): %s\n", n)
+					return 1
+				}
+			}
+			// A well-formed collection name this port has nothing for
+			// lists nothing, which is what real does for a collection
+			// it cannot find.
+			return 0
 		}
 		printList(r)
 		return 0
@@ -74,19 +86,42 @@ func run(args []string) int {
 		return 2
 	}
 
-	code := 0
-	for i, name := range names {
+	// A name it cannot find is a WARNING, not an error, and the docs of
+	// the names it DID find are still printed -- measured:
+	//
+	//	$ ansible-doc debug no_such_module_at_all
+	//	[WARNING]: no_such_module_at_all was not found
+	//	> MODULE ansible.builtin.debug (...)
+	//	[rc=0]
+	//
+	// This port printed its own sentence and exited 1, so someone
+	// asking for three modules and mistyping one got a failure exit
+	// for a command that had answered two thirds of the question --
+	// and real does not fail there.
+	//
+	// Real emits the warning ahead of the docs and this collects the
+	// misses first, which matches. That ORDERING is not asserted
+	// anywhere, and cannot be: the warning is on stderr and the docs
+	// on stdout, the tests capture the two separately, and the
+	// binaries harness refuses to compare them merged (merging would
+	// compare the reference's buffering). A neuter deferring the
+	// warnings to the end PASSES. Said here rather than left to look
+	// covered.
+	var found []string
+	for _, name := range names {
+		if _, ok := r.Get(name); !ok {
+			fmt.Fprintf(os.Stderr, "[WARNING]: %s was not found\n", name)
+			continue
+		}
+		found = append(found, name)
+	}
+	for i, name := range found {
 		if i > 0 {
 			fmt.Println()
 		}
-		if _, ok := r.Get(name); !ok {
-			fmt.Fprintf(os.Stderr, "ansible-doc: %s: no such module\n", name)
-			code = 1
-			continue
-		}
 		printModule(name)
 	}
-	return code
+	return 0
 }
 
 func usageText(w io.Writer) {

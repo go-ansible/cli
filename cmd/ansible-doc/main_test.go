@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -37,6 +38,37 @@ func captureStdout(t *testing.T, f func()) string {
 	return <-done
 }
 
+// runWithStreams runs the CLI with BOTH streams captured, draining
+// each while run() executes -- for the same reason captureStdout does:
+// a pipe holds about 64 KB and reading only afterwards deadlocks past
+// that.
+func runWithStreams(t *testing.T, args []string, out, errOut *bytes.Buffer) int {
+	t.Helper()
+	oldOut, oldErr := os.Stdout, os.Stderr
+	ro, wo, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	re, we, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout, os.Stderr = wo, we
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); _, _ = io.Copy(out, ro) }()
+	go func() { defer wg.Done(); _, _ = io.Copy(errOut, re) }()
+
+	code := run(args)
+
+	wo.Close()
+	we.Close()
+	os.Stdout, os.Stderr = oldOut, oldErr
+	wg.Wait()
+	return code
+}
+
 func TestRunVersion(t *testing.T) {
 	if code := run([]string{"--version"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
@@ -55,9 +87,13 @@ func TestRunUnknownFlag(t *testing.T) {
 	}
 }
 
+// Third test rewritten against the measurement rather than against
+// this port's own behaviour: real WARNS and exits 0 for a name it
+// cannot find, whether or not any other name was given. See
+// TestMissingNameIsAWarningNotAnError.
 func TestRunUnknownModule(t *testing.T) {
-	if code := run([]string{"no_such_module"}); code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code := run([]string{"no_such_module"}); code != 0 {
+		t.Fatalf("exit = %d, real exits 0 -- a name it cannot find is a warning", code)
 	}
 }
 
@@ -88,9 +124,14 @@ func TestRunMultipleModules(t *testing.T) {
 	}
 }
 
-func TestRunMixedKnownAndUnknownReturnsError(t *testing.T) {
-	if code := run([]string{"debug", "no_such_module"}); code != 1 {
-		t.Fatalf("exit = %d, want 1 (partial failure)", code)
+// This used to assert exit 1 for a mixed request -- this port's own
+// behaviour, not real's. Measured against ansible-core 2.21.4:
+// `ansible-doc debug no_such_module` WARNS about the missing one,
+// prints the doc for the other, and exits 0. See
+// TestMissingNameIsAWarningNotAnError, which pins the whole shape.
+func TestRunMixedKnownAndUnknownSucceeds(t *testing.T) {
+	if code := run([]string{"debug", "no_such_module"}); code != 0 {
+		t.Fatalf("exit = %d, real exits 0 -- a name it cannot find is a warning", code)
 	}
 }
 
@@ -109,9 +150,13 @@ func TestRunListPrintsAllModules(t *testing.T) {
 	}
 }
 
-func TestRunListRejectsModuleNames(t *testing.T) {
-	if code := run([]string{"-l", "debug"}); code != 2 {
-		t.Fatalf("exit = %d, want 2", code)
+// Also rewritten against the measurement: -l reads a positional as a
+// COLLECTION, so a bare module name is an [ERROR] about the collection
+// NAME and exit 1, not this port's "takes no module names" and exit 2.
+// See TestListWithABareNameIsACollectionError.
+func TestRunListRejectsABareModuleName(t *testing.T) {
+	if code := run([]string{"-l", "debug"}); code != 1 {
+		t.Fatalf("exit = %d, real exits 1", code)
 	}
 }
 
@@ -219,4 +264,75 @@ func firstMatchingLine(s, pat string) string {
 		}
 	}
 	return ""
+}
+
+// TestMissingNameIsAWarningNotAnError pins what real does with a name
+// it cannot find: a WARNING on stderr, the docs of the names it DID
+// find on stdout, and exit 0. Measured:
+//
+//	$ ansible-doc debug no_such_module_at_all
+//	[WARNING]: no_such_module_at_all was not found
+//	> MODULE ansible.builtin.debug (...)
+//	[rc=0]
+//
+// This port printed its own sentence, printed it BETWEEN the docs
+// rather than ahead of them, and exited 1 -- so asking for three
+// modules and mistyping one failed a command that had answered two
+// thirds of the question.
+func TestMissingNameIsAWarningNotAnError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"one missing name", []string{"no_such_module_at_all"}, "[WARNING]: no_such_module_at_all was not found\n"},
+		{"a good name and a missing one", []string{"debug", "no_such_module_at_all"}, "[WARNING]: no_such_module_at_all was not found\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			code := runWithStreams(t, tc.args, &out, &errOut)
+			if code != 0 {
+				t.Errorf("exit = %d, real exits 0 -- a name it cannot find is a warning", code)
+			}
+			if errOut.String() != tc.want {
+				t.Errorf("stderr =\n %q\nwant\n %q", errOut.String(), tc.want)
+			}
+		})
+	}
+
+	// The doc for the name that WAS found is still printed. The
+	// ORDERING between the stderr warning and the stdout doc is NOT
+	// asserted: the two streams are captured separately here and
+	// compared separately by the binaries harness, so nothing in this
+	// port can see it. A neuter deferring the warnings to the end
+	// passes, which is why this says so instead.
+	var out, errOut bytes.Buffer
+	runWithStreams(t, []string{"debug", "no_such_module_at_all"}, &out, &errOut)
+	if out.Len() == 0 {
+		t.Fatal("the doc for the name that WAS found must still be printed")
+	}
+}
+
+// TestListWithABareNameIsACollectionError pins the other one: -l reads
+// a positional as a COLLECTION, so a bare module name is refused with
+// real's own sentence and exit 1 -- not this port's "takes no module
+// names" and exit 2.
+func TestListWithABareNameIsACollectionError(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := runWithStreams(t, []string{"-l", "debug"}, &out, &errOut)
+	if code != 1 {
+		t.Errorf("exit = %d, real exits 1", code)
+	}
+	want := "[ERROR]: Invalid collection name (must be of the form namespace.collection): debug\n"
+	if errOut.String() != want {
+		t.Errorf("stderr =\n %q\nwant\n %q", errOut.String(), want)
+	}
+
+	// A WELL-FORMED collection name is accepted and lists nothing,
+	// which is what real does for a collection it does not have.
+	out.Reset()
+	errOut.Reset()
+	if code := runWithStreams(t, []string{"-l", "community.general"}, &out, &errOut); code != 0 {
+		t.Errorf("a well-formed collection name exits %d, real exits 0", code)
+	}
 }
