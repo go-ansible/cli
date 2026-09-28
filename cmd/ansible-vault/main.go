@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/go-ansible/cli/internal/vaultpw"
 	"golang.org/x/term"
@@ -56,6 +57,13 @@ func run(args []string) int {
 
 	password, err := resolvePassword(pwFile)
 	if err != nil {
+		// A password file that is not there gets real's own PAIR of
+		// lines -- a WARNING naming the id it tried, then the error --
+		// rather than a Go open error. Measured.
+		if pwFile != "" && os.IsNotExist(errors.Unwrap(err)) {
+			passwordFileMissing(os.Stderr, pwFile)
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 		return 1
 	}
@@ -183,7 +191,9 @@ func encryptFiles(files []string, password, vaultID string) int {
 			continue
 		}
 		if vault.IsVault(data) {
-			fmt.Fprintf(os.Stderr, "ansible-vault: %s is already encrypted\n", path)
+			// Real's wording is bare and lowercase, and names no
+			// file -- measured, and unlike every other vault error.
+			fmt.Fprintf(os.Stderr, "[ERROR]: %s\n", reasonAlreadyEnc)
 			code = 1
 			continue
 		}
@@ -208,13 +218,15 @@ func decryptFiles(files []string, password string) int {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+			readSourceFailure(os.Stderr, path, err)
 			code = 1
 			continue
 		}
 		plain, err := vault.Decrypt(string(data), password)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+			// decrypt names the file by its ABSOLUTE path, unlike
+			// view -- measured, and reproduced rather than tidied.
+			vaultFailure(os.Stderr, "decrypt", absOrSelf(path), path, decryptReason(data))
 			code = 1
 			continue
 		}
@@ -235,12 +247,13 @@ func viewFile(files []string, password string) int {
 	}
 	data, err := os.ReadFile(files[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+		readSourceFailure(os.Stderr, files[0], err)
 		return 1
 	}
 	plain, err := vault.Decrypt(string(data), password)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+		// view names the file AS GIVEN, unlike decrypt and rekey.
+		vaultFailure(os.Stderr, "view", files[0], files[0], decryptReason(data))
 		return 1
 	}
 	os.Stdout.Write(plain)
@@ -261,7 +274,7 @@ func rekeyFiles(files []string, oldPassword, newPassword, vaultID string) int {
 			continue
 		}
 		if !vault.IsVault(data) {
-			fmt.Fprintf(os.Stderr, "ansible-vault: %s is not encrypted\n", path)
+			vaultFailure(os.Stderr, "rekey", absOrSelf(path), path, reasonNotVault)
 			code = 1
 			continue
 		}
