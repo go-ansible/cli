@@ -19,6 +19,7 @@ import (
 	"github.com/go-ansible/cli/internal/termcolor"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
+	"github.com/go-ansible/vault"
 	"golang.org/x/term"
 
 	"github.com/go-ansible/cli/internal/usage"
@@ -177,9 +178,15 @@ func run(args []string) int {
 		pb, err := playbook.ParseFileWithVault(path, vaultPassword)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
-			if errors.Is(err, iofs.ErrNotExist) {
-				return 1
-			}
+			return parseExitCode(err)
+		}
+		// Real refuses a playbook naming a module it cannot resolve and
+		// runs NOTHING -- exit 4, a parse error, because no task ever
+		// started. Checked here rather than only inside RunPlaybook so
+		// --syntax-check and --list-tasks refuse it too, which real also
+		// does (measured: exit 4 for both).
+		if unresolved := e.UnresolvedModules(pb); len(unresolved) > 0 {
+			fmt.Fprintln(os.Stderr, "[ERROR]:", (&playbook.UnresolvedModulesError{Unresolved: unresolved}).Error())
 			return 4
 		}
 		if inspectFlags.any() {
@@ -195,6 +202,13 @@ func run(args []string) int {
 		rr, err := e.RunPlaybook(context.Background(), pb)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+			// The engine refuses an unresolvable module too, for a
+			// caller that does not pre-check. Real calls that a parse
+			// error, not a run error.
+			var unresolved *playbook.UnresolvedModulesError
+			if errors.As(err, &unresolved) {
+				return 4
+			}
 			return 1
 		}
 		if rr != nil && rr.Failed() {
@@ -287,4 +301,26 @@ func splitTagList(raw []string) []string {
 		}
 	}
 	return out
+}
+
+// parseExitCode maps a parse-time failure to real ansible-playbook's own
+// status. Real distinguishes three things this port used to collapse
+// into one -- measured, all three:
+//
+//	a missing playbook file                 1
+//	encrypted content, no or wrong password 1
+//	a YAML or structural error              4
+//
+// A vault failure is NOT a parse error there: the file parsed fine, it
+// just could not be read. Matching the sentinels rather than the message
+// text is why vault v0.8.0 added ErrNoPassword.
+func parseExitCode(err error) int {
+	switch {
+	case errors.Is(err, iofs.ErrNotExist):
+		return 1
+	case errors.Is(err, vault.ErrNoPassword), errors.Is(err, vault.ErrHMACMismatch):
+		return 1
+	default:
+		return 4
+	}
 }

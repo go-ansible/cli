@@ -582,3 +582,63 @@ func TestRunLimit(t *testing.T) {
 		t.Errorf("--limit h1,nosuch ran on %q exit %d, want h1 exit 0", got, code)
 	}
 }
+
+// TestExitCodesMatchReal pins real ansible-playbook's own statuses. The
+// three this port used to collapse into one are the point: a missing
+// file, a vault failure and a structural error all returned 4, so a
+// caller could not tell "I cannot read this" from "this is not a
+// playbook". Measured against ansible-core 2.21.4, case by case.
+//
+// Every case here has a DIFFERENT expected code from at least one other,
+// so a classifier that returned a single constant could not pass.
+func TestExitCodesMatchReal(t *testing.T) {
+	dir := t.TempDir()
+	inv := filepath.Join(dir, "inv.yml")
+	writeFile(t, inv, "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n")
+
+	enc, err := vault.Encrypt([]byte("k: v\n"), "right-password", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "enc.yml"), enc)
+	writeFile(t, filepath.Join(dir, "rightpw"), "right-password\n")
+	writeFile(t, filepath.Join(dir, "wrongpw"), "wrong-password\n")
+
+	ok := filepath.Join(dir, "ok.yml")
+	writeFile(t, ok, "- hosts: all\n  gather_facts: false\n  tasks:\n    - debug: {msg: x}\n")
+	failed := filepath.Join(dir, "failed.yml")
+	// `fail` rather than `command: /bin/false`: /bin/false does not
+	// exist on macOS, so that version failed with rc 127 "No such file
+	// or directory" and still exited 2 -- the right answer for the
+	// wrong reason, and a confusing one to read in the log.
+	writeFile(t, failed, "- hosts: all\n  gather_facts: false\n  tasks:\n    - fail: {msg: deliberate}\n")
+	syntax := filepath.Join(dir, "syntax.yml")
+	writeFile(t, syntax, "this: is: not: a: playbook\n")
+	badmod := filepath.Join(dir, "badmod.yml")
+	writeFile(t, badmod, "- hosts: all\n  gather_facts: false\n  tasks:\n    - nosuchmodule: {}\n")
+	vaultpb := filepath.Join(dir, "vault.yml")
+	writeFile(t, vaultpb, "- hosts: all\n  gather_facts: false\n  vars_files: [enc.yml]\n  tasks:\n    - debug: {msg: x}\n")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"success", []string{"-i", inv, ok}, 0},
+		{"a failed task", []string{"-i", inv, failed}, 2},
+		{"a structural error", []string{"-i", inv, syntax}, 4},
+		{"an unresolvable module", []string{"-i", inv, badmod}, 4},
+		{"--syntax-check sees it too", []string{"-i", inv, "--syntax-check", badmod}, 4},
+		{"--list-tasks sees it too", []string{"-i", inv, "--list-tasks", badmod}, 4},
+		{"a missing playbook", []string{"-i", inv, filepath.Join(dir, "nope.yml")}, 1},
+		{"encrypted, no password", []string{"-i", inv, vaultpb}, 1},
+		{"encrypted, wrong password", []string{"-i", inv, "--vault-password-file", filepath.Join(dir, "wrongpw"), vaultpb}, 1},
+		{"encrypted, right password", []string{"-i", inv, "--vault-password-file", filepath.Join(dir, "rightpw"), vaultpb}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := run(tc.args); got != tc.want {
+				t.Errorf("exit = %d, real gives %d", got, tc.want)
+			}
+		})
+	}
+}
