@@ -17,6 +17,7 @@ import (
 	"github.com/go-ansible/cli/internal/extravars"
 	"github.com/go-ansible/cli/internal/invload"
 	"github.com/go-ansible/cli/internal/termcolor"
+	"github.com/go-ansible/cli/internal/verbosity"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
 	"github.com/go-ansible/vault"
@@ -74,6 +75,7 @@ func run(args []string) int {
 	fs.StringVar(vaultPasswordFile, "vault-pass-file", "", "read the vault password from this file")
 	askVaultPass := fs.Bool("ask-vault-password", false, "prompt for the vault password (also --ask-vault-pass)")
 	fs.BoolVar(askVaultPass, "ask-vault-pass", false, "prompt for the vault password")
+	verbose := verbosity.Register(fs)
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: ansible-playbook -i INVENTORY [-e KEY=VAL ...] PLAYBOOK.yml [PLAYBOOK2.yml ...]")
@@ -171,7 +173,34 @@ func run(args []string) int {
 		}
 	}
 	e.Warn = warn
-	e.Callbacks = []playbook.Callback{playbook.NewDefaultCallback(os.Stdout, termcolor.Enabled(os.Stdout, *noColor))}
+	// Real's -v announces which config file it read, on stdout, before
+	// anything else -- measured, and with these exact two wordings:
+	//
+	//	Using /abs/path/ansible.cfg as config file
+	//	No config file found; using defaults
+	//
+	// It is the one line that still separated a full -v transcript from
+	// real's once banners and -v were in place. (Which stream it goes
+	// to took two tries to establish: read through a pipe it appeared
+	// to be on both, which is an artefact of juggling descriptors
+	// around a wrapper. Redirected to two separate FILES it is on
+	// stdout, once.)
+	if *verbose >= 1 {
+		if cfg := playbook.ConfigFilePath(); cfg != "" {
+			fmt.Printf("Using %s as config file\n", cfg)
+		} else {
+			fmt.Println("No config file found; using defaults")
+		}
+	}
+
+	cb := playbook.NewDefaultCallback(os.Stdout, termcolor.Enabled(os.Stdout, *noColor))
+	cb.Verbosity = *verbose
+	// Real pads its banners to max(79, terminal width - 1); a
+	// non-terminal gets 79, which is the callback's own default.
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w-1 > 79 {
+		cb.Columns = w - 1
+	}
+	e.Callbacks = []playbook.Callback{cb}
 
 	failed, unreachable := false, false
 	for _, path := range playbooks {
