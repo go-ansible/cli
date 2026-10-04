@@ -40,6 +40,41 @@ jobs:
       - name: Test
         run: go test ./...
 
+  # Every ansible-* binary, built for Windows. Not a test run: the suite
+  # here drives real playbooks through a POSIX shell and would fail for
+  # reasons that say nothing about portability. What this job claims is
+  # exactly what it checks -- that a Windows control node can be built,
+  # which is something real ansible-core does not support at all.
+  #
+  # It exists because nothing ever built for Windows before, and a single
+  # mistyped socket argument three repos down kept the whole stack from
+  # compiling there without anyone finding out.
+  cross:
+    name: cross-compile (windows/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Build every ansible-* binary
+        run: |
+          set -eu
+          n=0
+          for c in cmd/*/; do
+            GOARCH=${{ matrix.goarch }} go build -o /dev/null "./$c"
+            n=$((n+1))
+          done
+          echo "built $n binaries for windows/${{ matrix.goarch }}"
+          test "$n" -eq 9
+
   arch-native:
     name: arch ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
