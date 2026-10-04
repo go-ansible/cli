@@ -54,14 +54,42 @@ func TestResolvePasswordFromFile(t *testing.T) {
 	}
 }
 
+// TestResolvePasswordFromEnv used to assert that $ANSIBLE_VAULT_PASSWORD
+// -- the password ITSELF in an environment variable -- was honoured. It
+// pinned this port's own divergence: real Ansible's config/base.yml
+// declares only ANSIBLE_VAULT_PASSWORD_FILE, and a measured real run
+// ignores the value-carrying variable entirely ("Attempting to decrypt
+// but no vault secrets found"). An environment variable is also
+// inherited by every child process, which for this port means every
+// local command a module runs; a password file has an owner and a mode.
+//
+// So the test now asserts real's variable works and ours is REFUSED.
 func TestResolvePasswordFromEnv(t *testing.T) {
-	t.Setenv("ANSIBLE_VAULT_PASSWORD", "envpw")
+	dir := t.TempDir()
+	pwFile := filepath.Join(dir, "pw")
+	if err := os.WriteFile(pwFile, []byte("envpw\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANSIBLE_VAULT_PASSWORD_FILE", pwFile)
+
 	pw, err := resolvePassword("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pw != "envpw" {
 		t.Fatalf("pw = %q", pw)
+	}
+}
+
+// The variable this port invented is refused, not ignored -- ignoring it
+// would send a caller who relied on it to the password prompt, which in
+// a CI job with no terminal reads EOF and reports something unrelated.
+func TestResolvePasswordRefusesTheValueCarryingEnv(t *testing.T) {
+	t.Setenv("ANSIBLE_VAULT_PASSWORD_FILE", "")
+	t.Setenv("ANSIBLE_VAULT_PASSWORD", "envpw")
+
+	if _, err := resolvePassword(""); err == nil {
+		t.Fatal("ANSIBLE_VAULT_PASSWORD was accepted; it must be refused")
 	}
 }
 

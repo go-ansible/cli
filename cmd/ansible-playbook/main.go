@@ -110,7 +110,10 @@ func run(args []string) int {
 	// caller said one exists — otherwise a plaintext run would stop to
 	// prompt for a password nothing needs.
 	var vaultPassword string
-	if *vaultPasswordFile != "" || *askVaultPass {
+	// A password file named in $ANSIBLE_VAULT_PASSWORD_FILE or in
+	// ansible.cfg counts as asking, which is what real does: it reads
+	// a vaulted vars_files from the environment variable with no flag.
+	if *vaultPasswordFile != "" || *askVaultPass || vaultpw.PasswordFileConfigured() {
 		vaultPassword, err = vaultpw.Resolve(*vaultPasswordFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
