@@ -1,6 +1,6 @@
 module github.com/go-ansible/cli
 
-go 1.26.4
+go 1.27.1
 
 require (
 	github.com/go-ansible/inventory v0.18.0
