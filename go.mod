@@ -3,13 +3,13 @@ module github.com/go-ansible/cli
 go 1.27.1
 
 require (
-	github.com/go-ansible/inventory v0.18.0
-	github.com/go-ansible/modules v0.81.0
-	github.com/go-ansible/playbook v0.126.0
-	github.com/go-ansible/template v0.31.1
-	github.com/go-ansible/vault v0.8.0
-	github.com/go-git/go-git/v5 v5.19.2
-	github.com/go-remoteexec/transport v0.4.0
+	github.com/go-ansible/inventory v0.19.0
+	github.com/go-ansible/modules v0.82.0
+	github.com/go-ansible/playbook v0.127.0
+	github.com/go-ansible/template v0.32.0
+	github.com/go-ansible/vault v0.9.0
+	github.com/go-git/go-git/v5 v5.19.3
+	github.com/go-remoteexec/transport v0.5.0
 	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -27,17 +27,16 @@ require (
 	github.com/go-ansible/vars v0.1.2 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
-	github.com/go-git/go-billy/v5 v5.9.0 // indirect
+	github.com/go-git/go-billy/v5 v5.9.2 // indirect
 	github.com/go-regexp/engine v0.1.3 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nikolalohinski/gonja/v2 v2.9.1 // indirect
-	github.com/pjbgf/sha1cd v0.6.0 // indirect
+	github.com/pjbgf/sha1cd v0.7.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
