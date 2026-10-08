@@ -34,8 +34,8 @@ github.com/go-ansible/inventory v0.19.0 h1:Qvp6ftQC7OqYijw/qqPxzIJAe+k8XjqSqf/bN
 github.com/go-ansible/inventory v0.19.0/go.mod h1:DdKwny3Ox+u5Zk4+XfsikUNCc8NYhrQ06koaxehoPyY=
 github.com/go-ansible/modules v0.82.0 h1:C6DPdDC/bqTnzQuzbbGK3etXxAMPvqjYXwYEbjX+F54=
 github.com/go-ansible/modules v0.82.0/go.mod h1:VSvFNk1tWSq6WNtlitEDLKncg6hEy+EHYUR++lvlqtA=
-github.com/go-ansible/playbook v0.128.0 h1:iVnPpstelzbxp2T193iIWAJR5Tn4PNM1GezbY1yu3VY=
-github.com/go-ansible/playbook v0.128.0/go.mod h1:QKSa2wGrnA5K0q5EgnRTPN7ND4pDW/gtjgpcMRwafSs=
+github.com/go-ansible/playbook v0.129.0 h1:qY/FrMJNu1fnkK1uFT0KBZDaJmzIpB/1WZfw/kbKOKw=
+github.com/go-ansible/playbook v0.129.0/go.mod h1:QKSa2wGrnA5K0q5EgnRTPN7ND4pDW/gtjgpcMRwafSs=
 github.com/go-ansible/template v0.33.0 h1:qV8vBLJ1kUzRtGuTD25K2mamIpwI3mIyB+pyl5T1LIY=
 github.com/go-ansible/template v0.33.0/go.mod h1:SebAw7RKNIMBaRojuqJW+hOodbLrfjyulcWjV3s0kPo=
 github.com/go-ansible/vars v0.2.0 h1:NeOdU1bgjMSSYZaDhyCgN823F95SMCOpD0GsLPMN8QY=
