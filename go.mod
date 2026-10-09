@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/go-ansible/inventory v0.19.0
-	github.com/go-ansible/modules v0.83.0
+	github.com/go-ansible/modules v0.83.1
 	github.com/go-ansible/playbook v0.136.0
 	github.com/go-ansible/template v0.33.0
 	github.com/go-ansible/vault v0.9.0
