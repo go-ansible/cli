@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/go-ansible/inventory v0.19.0
 	github.com/go-ansible/modules v0.83.0
-	github.com/go-ansible/playbook v0.136.0
+	github.com/go-ansible/playbook v0.137.0
 	github.com/go-ansible/template v0.33.0
 	github.com/go-ansible/vault v0.9.0
 	github.com/go-git/go-git/v5 v5.19.3
@@ -24,7 +24,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-ansible/facts v0.18.0 // indirect
-	github.com/go-ansible/vars v0.2.0 // indirect
+	github.com/go-ansible/vars v0.3.0 // indirect
 	github.com/go-encryptions/unixcrypt v0.2.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.2 // indirect
