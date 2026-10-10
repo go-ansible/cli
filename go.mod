@@ -3,14 +3,14 @@ module github.com/go-ansible/cli
 go 1.27.1
 
 require (
-	github.com/go-ansible/inventory v0.19.0
-	github.com/go-ansible/modules v0.83.2
-	github.com/go-ansible/playbook v0.137.1
-	github.com/go-ansible/template v0.33.0
-	github.com/go-ansible/vault v0.9.0
+	github.com/go-ansible/inventory v0.19.1
+	github.com/go-ansible/modules v0.83.3
+	github.com/go-ansible/playbook v0.137.2
+	github.com/go-ansible/template v0.33.2
+	github.com/go-ansible/vault v0.9.1
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-remoteexec/transport v0.5.0
-	golang.org/x/term v0.46.0
+	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -45,7 +45,7 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
