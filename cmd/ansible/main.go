@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-ansible/cli/internal/adhoc"
 	"github.com/go-ansible/cli/internal/invload"
+	"github.com/go-ansible/cli/internal/vaultpw"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/playbook"
 
@@ -31,6 +32,10 @@ func run(args []string) int {
 	fs.StringVar(moduleArgs, "args", "", "module arguments")
 	become := fs.Bool("b", false, "run with privilege escalation (also --become)")
 	fs.BoolVar(become, "become", false, "run with privilege escalation")
+	vaultPasswordFile := fs.String("vault-password-file", "", "read the vault password from this file (also --vault-pass-file)")
+	fs.StringVar(vaultPasswordFile, "vault-pass-file", "", "read the vault password from this file")
+	askVaultPass := fs.Bool("ask-vault-password", false, "prompt for the vault password (also --ask-vault-pass)")
+	fs.BoolVar(askVaultPass, "ask-vault-pass", false, "prompt for the vault password")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: ansible PATTERN -i INVENTORY -m MODULE [-a ARGS] [-b]")
@@ -70,12 +75,31 @@ func run(args []string) int {
 	}
 
 	// One Warner for the process, as real has one Display.
+	// A vault-encrypted group_vars is where real Ansible keeps secrets,
+	// so a command that reads an inventory has to be able to unlock one.
+	// Asked for only when the caller said a password exists -- an
+	// environment variable or ansible.cfg entry counts as asking, which
+	// is what real does.
+	var vaultPassword string
+	if *vaultPasswordFile != "" || *askVaultPass || vaultpw.PasswordFileConfigured() {
+		var err error
+		vaultPassword, err = vaultpw.Resolve(*vaultPasswordFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+			return 1
+		}
+	}
+
 	warn := playbook.NewWarner(os.Stderr)
 
 	// An unusable inventory is a warning, not a failure — see invload.
 	// Ad-hoc resolves against the USER's pattern, not "all", which is
 	// what suppresses the empty-inventory warning for `localhost`.
-	inv := invload.Load(*inventoryPath, "", pattern, warn)
+	inv, err := invload.Load(*inventoryPath, vaultPassword, pattern, warn)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+		return invload.VaultExit
+	}
 
 	hosts, unmatched, err := inv.MatchReport(pattern)
 	if err != nil {
@@ -113,6 +137,8 @@ var flagsWithValue = map[string]bool{
 	"-i": true, "-inventory": true, "--inventory": true,
 	"-m": true, "-module-name": true, "--module-name": true,
 	"-a": true, "-args": true, "--args": true,
+	"-vault-password-file": true, "--vault-password-file": true,
+	"-vault-pass-file": true, "--vault-pass-file": true,
 }
 
 // extractPattern pulls the single non-flag token (Ansible's host

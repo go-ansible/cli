@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
+	"github.com/go-ansible/vault"
 )
 
 // These are real Ansible's own sentences, character for character.
@@ -29,6 +30,28 @@ const (
 	noneParsed     = "No inventory was parsed, only implicit localhost is available"
 	emptyHostsList = "provided hosts list is empty, only localhost is available. Note that the implicit localhost does not match 'all'"
 )
+
+// A vault failure is the one inventory problem real treats as FATAL
+// rather than as a warning, and it is worth being precise about why:
+// an unusable SOURCE means "carry on with what you have", while an
+// encrypted source you cannot read means the inventory you were asked
+// for is not the one you would get. Measured against ansible-core
+// 2.21.4, and identically from ansible-inventory and ansible-playbook:
+//
+//	-i /nope.ini                   WARNING, exit 0
+//	encrypted, no vault secret     [ERROR], exit 4
+//	encrypted, wrong password      [ERROR], exit 4
+//
+// These are real's own sentences, capital and full stop included,
+// because they are printed verbatim after "[ERROR]: ".
+var (
+	errNoVaultSecret = errors.New("Attempting to decrypt but no vault secrets found.")
+	errDecryptFailed = errors.New("Decryption failed (no vault secrets were found that could decrypt).")
+)
+
+// VaultExit is the status real exits with when it cannot decrypt an
+// inventory source.
+const VaultExit = 4
 
 // Load returns the inventory at path, warning through warn about
 // anything real Ansible would warn about and NEVER failing: an absent,
@@ -51,8 +74,11 @@ const (
 // the list of localhost spellings here, this asks the inventory
 // itself — on an empty inventory, only such a pattern matches
 // anything — so the two cannot drift apart.
-func Load(path, vaultPassword, pattern string, warn playbook.Warner) *inventory.Inventory {
-	inv, parsed := loadOrEmpty(path, vaultPassword, warn)
+func Load(path, vaultPassword, pattern string, warn playbook.Warner) (*inventory.Inventory, error) {
+	inv, parsed, fatal := loadOrEmpty(path, vaultPassword, warn)
+	if fatal != nil {
+		return nil, fatal
+	}
 	if !parsed {
 		warn(noneParsed)
 	}
@@ -66,7 +92,7 @@ func Load(path, vaultPassword, pattern string, warn playbook.Warner) *inventory.
 			warn(emptyHostsList)
 		}
 	}
-	return inv
+	return inv, nil
 }
 
 // loadOrEmpty reports whether a source was actually parsed, which is
@@ -74,12 +100,20 @@ func Load(path, vaultPassword, pattern string, warn playbook.Warner) *inventory.
 // inventory was parsed" for a missing file but not for a file that
 // parsed to nothing. Measured — an empty .ini produces only the
 // empty-hosts warning, while a missing one produces both.
-func loadOrEmpty(path, vaultPassword string, warn playbook.Warner) (*inventory.Inventory, bool) {
+func loadOrEmpty(path, vaultPassword string, warn playbook.Warner) (*inventory.Inventory, bool, error) {
 	if path == "" {
-		return inventory.New(), false
+		return inventory.New(), false, nil
 	}
 	inv, err := inventory.LoadWithVault(path, vaultPassword)
 	if err != nil {
+		// Before the warning path: a source that is encrypted and
+		// unreadable is fatal, not something to carry on from.
+		switch {
+		case errors.Is(err, vault.ErrNoPassword):
+			return nil, false, errNoVaultSecret
+		case errors.Is(err, vault.ErrHMACMismatch):
+			return nil, false, errDecryptFailed
+		}
 		// Real reports the ABSOLUTE path, even when -i was given a
 		// relative one: measured, `-i nope.ini` warns about
 		// /full/path/nope.ini.
@@ -112,7 +146,7 @@ func loadOrEmpty(path, vaultPassword string, warn playbook.Warner) (*inventory.I
 			warn(fmt.Sprintf(failedToParse, strings.TrimPrefix(err.Error(), "inventory: ")))
 		}
 		warn(fmt.Sprintf(unableToParse, shown))
-		return inventory.New(), false
+		return inventory.New(), false, nil
 	}
-	return inv, true
+	return inv, true, nil
 }

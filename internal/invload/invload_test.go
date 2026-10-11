@@ -121,7 +121,10 @@ func TestLoadWarnings(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			warn, got := collect()
-			inv := Load(tc.path, "", tc.pattern, warn)
+			inv, err := Load(tc.path, "", tc.pattern, warn)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
 			if inv == nil {
 				t.Fatal("Load returned nil inventory; it must never do that")
 			}
@@ -138,7 +141,10 @@ func TestLoadWarnings(t *testing.T) {
 // answers to the implicit localhost.
 func TestLoadNeverFailsAndKeepsImplicitLocalhost(t *testing.T) {
 	warn, _ := collect()
-	inv := Load(filepath.Join(t.TempDir(), "absent.ini"), "", "all", warn)
+	inv, err := Load(filepath.Join(t.TempDir(), "absent.ini"), "", "all", warn)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	hosts, err := inv.Match("localhost")
 	if err != nil {
 		t.Fatalf("Match: %v", err)
@@ -161,7 +167,9 @@ func TestLoadReportsAbsolutePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	warn, got := collect()
-	Load("nope.ini", "", "all", warn)
+	if _, err := Load("nope.ini", "", "all", warn); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if len(*got) == 0 || !filepath.IsAbs(strings.TrimSuffix(strings.TrimPrefix((*got)[0], "Unable to parse "), " as an inventory source")) {
 		t.Fatalf("first warning = %q, want an absolute path in it", (*got))
 	}
