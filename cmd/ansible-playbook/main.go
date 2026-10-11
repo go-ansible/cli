@@ -127,7 +127,11 @@ func run(args []string) int {
 	// An unusable inventory is a warning, not a failure — see invload.
 	// ansible-playbook always resolves against "all", whatever any
 	// play's own hosts: says, which is the pattern real passes here.
-	inv := invload.Load(*inventoryPath, vaultPassword, "all", warn)
+	inv, err := invload.Load(*inventoryPath, vaultPassword, "all", warn)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+		return invload.VaultExit
+	}
 
 	vars, err := extravars.Parse(extra)
 	if err != nil {

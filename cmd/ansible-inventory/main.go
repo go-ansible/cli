@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/go-ansible/cli/internal/invload"
+	"github.com/go-ansible/cli/internal/vaultpw"
 	"github.com/go-ansible/cli/internal/version"
 	"github.com/go-ansible/inventory"
 	"github.com/go-ansible/playbook"
@@ -47,6 +48,10 @@ func run(args []string) int {
 	fs.StringVar(limit, "l", "", "further limit selected hosts to an additional pattern")
 	yamlOut := fs.Bool("yaml", false, "use YAML format instead of default JSON (not implemented)")
 	tomlOut := fs.Bool("toml", false, "use TOML format instead of default JSON (not implemented)")
+	vaultPasswordFile := fs.String("vault-password-file", "", "read the vault password from this file (also --vault-pass-file)")
+	fs.StringVar(vaultPasswordFile, "vault-pass-file", "", "read the vault password from this file")
+	askVaultPass := fs.Bool("ask-vault-password", false, "prompt for the vault password (also --ask-vault-pass)")
+	fs.BoolVar(askVaultPass, "ask-vault-pass", false, "prompt for the vault password")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: ansible-inventory [-i INVENTORY] --list | --host HOST | --graph")
@@ -79,11 +84,30 @@ func run(args []string) int {
 		return noActionExit
 	}
 
+	// A vault-encrypted group_vars is where real Ansible keeps secrets,
+	// so a command that reads an inventory has to be able to unlock one.
+	// Asked for only when the caller said a password exists -- an
+	// environment variable or ansible.cfg entry counts as asking, which
+	// is what real does.
+	var vaultPassword string
+	if *vaultPasswordFile != "" || *askVaultPass || vaultpw.PasswordFileConfigured() {
+		var err error
+		vaultPassword, err = vaultpw.Resolve(*vaultPasswordFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+			return 1
+		}
+	}
+
 	warn := playbook.NewWarner(os.Stderr)
 	// The empty pattern: ansible-inventory resolves no host list of
 	// its own, so the "provided hosts list is empty" warning that
 	// ansible-playbook emits does not belong here. Measured.
-	inv := invload.Load(*inventoryPath, "", "", warn)
+	inv, err := invload.Load(*inventoryPath, vaultPassword, "", warn)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]:", err)
+		return invload.VaultExit
+	}
 
 	switch {
 	case *host != "":
