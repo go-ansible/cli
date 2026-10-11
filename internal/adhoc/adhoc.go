@@ -20,24 +20,26 @@ import (
 )
 
 // ParseModuleArgs builds a module's argument map from an ad-hoc -a
-// string. command/shell (and any module taking a single free-form
-// string) get the whole string as _raw_params; every other module
-// parses it as space-separated key=value pairs, Ansible's ad-hoc
-// convention.
-func ParseModuleArgs(module, argsStr string) map[string]any {
-	switch module {
-	case "command", "shell":
-		return map[string]any{"_raw_params": argsStr}
-	}
-	out := map[string]any{}
-	for _, pair := range strings.Fields(argsStr) {
-		key, val, ok := strings.Cut(pair, "=")
-		if !ok {
-			continue
-		}
-		out[key] = val
-	}
-	return out
+// string, delegating to playbook.ParseModuleArgs -- real's parse_kv,
+// quote state, nested Jinja blocks, escaped equals and _raw_params
+// included.
+//
+// This used to be its own strings.Fields loop, which could see none of
+// that and SILENTLY `continue`d past any token without an equals sign.
+// Measured against ansible-core 2.21.4, `ansible -m debug`:
+//
+//	-a 'msg=hello world'    real refuses   this ran msg="hello"
+//	-a 'msg="hello world"'  "hello world"  this ran msg="\"hello"
+//	-a 'msg={{ v }}'        "i-am-plain"   this ran msg="{{"
+//
+// It also special-cased only command and shell, where real's
+// MODULE_REQUIRE_ARGS is six modules -- raw, script, win_command and
+// win_shell were parsed as k=v pairs.
+//
+// A module handed free-form text it cannot take is now an error, as it
+// is in real, rather than an argument quietly dropped.
+func ParseModuleArgs(module, argsStr string) (map[string]any, error) {
+	return playbook.ParseModuleArgs(module, argsStr)
 }
 
 // Run executes moduleName/args against every named host (connecting

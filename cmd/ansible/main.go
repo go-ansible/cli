@@ -116,7 +116,13 @@ func run(args []string) int {
 		return 0
 	}
 
-	moduleArgsMap := adhoc.ParseModuleArgs(*moduleName, *moduleArgs)
+	moduleArgsMap, err := adhoc.ParseModuleArgs(*moduleName, *moduleArgs)
+	if err != nil {
+		// Real's shape and status for a module handed free-form text it
+		// cannot take: measured, exit 2.
+		fmt.Fprintln(os.Stderr, "[ERROR]: Task failed:", err)
+		return 2
+	}
 	hostNames := make([]string, len(hosts))
 	for i, h := range hosts {
 		hostNames[i] = h.Name

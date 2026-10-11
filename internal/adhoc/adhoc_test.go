@@ -12,30 +12,70 @@ import (
 )
 
 func TestParseModuleArgsCommand(t *testing.T) {
-	args := ParseModuleArgs("command", "echo hi there")
+	args, err := ParseModuleArgs("command", "echo hi there")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if args["_raw_params"] != "echo hi there" {
 		t.Fatalf("args = %v", args)
 	}
 }
 
 func TestParseModuleArgsShell(t *testing.T) {
-	args := ParseModuleArgs("shell", "echo a | b")
+	args, err := ParseModuleArgs("shell", "echo a | b")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if args["_raw_params"] != "echo a | b" {
 		t.Fatalf("args = %v", args)
 	}
 }
 
 func TestParseModuleArgsKeyValue(t *testing.T) {
-	args := ParseModuleArgs("copy", "src=/a dest=/b")
+	args, err := ParseModuleArgs("copy", "src=/a dest=/b")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if args["src"] != "/a" || args["dest"] != "/b" {
 		t.Fatalf("args = %v", args)
 	}
 }
 
-func TestParseModuleArgsSkipsBadPair(t *testing.T) {
-	args := ParseModuleArgs("copy", "src=/a badtoken dest=/b")
-	if len(args) != 2 || args["src"] != "/a" || args["dest"] != "/b" {
-		t.Fatalf("args = %v", args)
+// This test used to be called "SkipsBadPair" and asserted len(args)==2
+// -- it PINNED the defect, requiring the stray token to be dropped.
+// Real refuses it: measured, `ansible -m copy -a 'src=/a badtoken
+// dest=/b'` prints
+//
+//	[ERROR]: Task failed: Action 'ansible.builtin.copy' does not support raw params.
+//
+// A stray token is a raw param, and copy cannot take one. Silently
+// dropping it ran a DIFFERENT task than the one asked for.
+func TestParseModuleArgsRefusesAStrayToken(t *testing.T) {
+	args, err := ParseModuleArgs("copy", "src=/a badtoken dest=/b")
+	if err == nil {
+		t.Fatalf("a stray token was accepted: args = %v, want a refusal", args)
+	}
+	const want = "Action 'ansible.builtin.copy' does not support raw params."
+	if err.Error() != want {
+		t.Errorf("error:\n got %q\nwant %q", err.Error(), want)
+	}
+}
+
+// The quoting and Jinja cases the old parser could not see at all.
+func TestParseModuleArgsSeesQuotesAndJinja(t *testing.T) {
+	for _, c := range []struct{ name, args, key, want string }{
+		{"a quoted value keeps its spaces", `msg="hello world"`, "msg", "hello world"},
+		{"a jinja block is one token", "msg={{ v }}", "msg", "{{ v }}"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			args, err := ParseModuleArgs("debug", c.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := args[c.key]; got != c.want {
+				t.Errorf("%s = %#v, want %#v", c.key, got, c.want)
+			}
+		})
 	}
 }
 
