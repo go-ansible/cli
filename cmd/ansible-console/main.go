@@ -271,7 +271,11 @@ func (s *session) handleLine(line string) (exit bool) {
 		moduleName = fields[0]
 		argsStr = strings.TrimSpace(strings.TrimPrefix(line, fields[0]))
 	}
-	args := adhoc.ParseModuleArgs(moduleName, argsStr)
+	args, err := adhoc.ParseModuleArgs(moduleName, argsStr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]: Task failed:", err)
+		return
+	}
 	adhoc.Run(context.Background(), s.inv, s.hosts, moduleName, args, s.become, s.out)
 	return false
 }
