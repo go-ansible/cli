@@ -60,6 +60,29 @@ func Run(ctx context.Context, inv *inventory.Inventory, hostNames []string, modu
 			defer wg.Done()
 			hostVars := inv.HostVars(hostName)
 
+			// The arguments are templated per host, against the same
+			// variable set a play would give this host --
+			// playbook.AdHocHostVars, so there is not a second place
+			// deciding which variables exist. Measured: real resolves
+			// inventory_hostname, group_names, groups, hostvars and a
+			// group_vars value in `-a 'msg={{ ... }}'`.
+			//
+			// Per goroutine rather than one shared engine: gonja's
+			// filter registration is not atomic, and an Engine is
+			// cheap next to opening a connection.
+			runArgs, rerr := template.New().RenderValue(args, playbook.AdHocHostVars(inv, hostName, hostNames))
+			if rerr != nil {
+				mu.Lock()
+				fmt.Fprintf(w, "%s | FAILED => %s\n", hostName, rerr)
+				anyFailed = true
+				mu.Unlock()
+				return
+			}
+			hostArgs, ok := runArgs.(map[string]any)
+			if !ok {
+				hostArgs = args
+			}
+
 			conn, err := playbook.DefaultConnect(ctx, hostName, hostVars)
 			if err != nil {
 				mu.Lock()
@@ -75,7 +98,7 @@ func Run(ctx context.Context, inv *inventory.Inventory, hostNames []string, modu
 				target = remoteexec.Become(conn, remoteexec.BecomeConfig{})
 			}
 
-			res, err := registry.Run(ctx, moduleName, target, args)
+			res, err := registry.Run(ctx, moduleName, target, hostArgs)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
