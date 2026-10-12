@@ -212,3 +212,53 @@ func TestSetupFactsDict(t *testing.T) {
 		t.Errorf("got  %#v\nwant %#v", got, want)
 	}
 }
+
+// Ad-hoc arguments are TEMPLATED per host, against the same variable
+// set a play would give that host (playbook.AdHocHostVars). Measured
+// against real ansible-core 2.21.4: `ansible -m debug -a 'msg={{
+// inventory_hostname }}'` prints the host's name, and a group_vars
+// value resolves the same way.
+//
+// Before this, the whole matrix of eight -a shapes had one case left
+// over: the string parsed correctly as a single token and was then
+// passed through LITERALLY, so the module saw "{{ inventory_hostname }}".
+func TestRunTemplatesItsArguments(t *testing.T) {
+	// The expected text is matched as the RENDERED msg field, not
+	// anywhere in the output: "localhost" alone also appears in the
+	// "localhost | SUCCESS" prefix, so a bare Contains made the magic
+	// variable case pass even with the templating removed. The neuter
+	// is what exposed that.
+	for _, c := range []struct{ name, expr, want string }{
+		{"a magic variable", "{{ inventory_hostname }}", `"msg": "localhost"`},
+		// Unquoted on purpose: a whole-expression template keeps its
+		// NATIVE type, so this is the integer 2, not "2". Real prints
+		// it unquoted too.
+		{"an expression keeps its native type", "{{ 1 + 1 }}", `"msg": 2`},
+		{"text around a block", "host-{{ inventory_hostname }}-end", `"msg": "host-localhost-end"`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			failed := Run(context.Background(), localInventory(t), []string{"localhost"},
+				"debug", map[string]any{"msg": c.expr}, false, &buf)
+			if failed {
+				t.Fatalf("Run reported failure: %s", buf.String())
+			}
+			if out := buf.String(); !strings.Contains(out, c.want) {
+				t.Errorf("%q was not resolved: output = %q, want it to contain %q", c.expr, out, c.want)
+			}
+		})
+	}
+}
+
+// The CONTROL: a literal with no template in it must come through
+// untouched, so "it resolved" cannot be satisfied by mangling.
+func TestRunLeavesAPlainStringAlone(t *testing.T) {
+	var buf bytes.Buffer
+	if failed := Run(context.Background(), localInventory(t), []string{"localhost"},
+		"debug", map[string]any{"msg": "{ not a template }"}, false, &buf); failed {
+		t.Fatalf("Run reported failure: %s", buf.String())
+	}
+	if out := buf.String(); !strings.Contains(out, `"msg": "{ not a template }"`) {
+		t.Errorf("a plain string was altered: output = %q", out)
+	}
+}
