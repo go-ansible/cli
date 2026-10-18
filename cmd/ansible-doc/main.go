@@ -140,14 +140,18 @@ const (
 	bodyIndent = "  "
 )
 
-// fqcn qualifies a module name the way real prints it. Every module this
-// port implements is one of ansible-core's own, so the namespace is
-// always ansible.builtin.
+// fqcn qualifies a module name the way real prints it: with the
+// module's OWN collection, which modules.FQCN answers from an
+// attribution measured against real's doc index.
+//
+// It used to return "ansible.builtin." + name unconditionally, on the
+// premise that every module here was one of ansible-core's own. That
+// was true when this was written and wrong for 514 of the 576 modules
+// registered today -- and the wrong name was worse than cosmetic,
+// because modules.NormalizeName strips any known prefix, so
+// `ansible.builtin.rocketchat` ran HERE and real Ansible rejects it.
 func fqcn(name string) string {
-	if strings.Contains(name, ".") {
-		return name
-	}
-	return "ansible.builtin." + name
+	return modules.FQCN(name)
 }
 
 func printList(r *modules.Registry) {

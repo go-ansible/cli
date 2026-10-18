@@ -180,17 +180,44 @@ func TestListMatchesRealsColumnLayout(t *testing.T) {
 	if len(lines) < 100 {
 		t.Fatalf("only %d modules listed", len(lines))
 	}
+	// Each line is qualified with the module's OWN collection, and all
+	// three must actually appear: "starts with one of three prefixes"
+	// would pass unchanged on the old behaviour of printing
+	// ansible.builtin for everything.
+	prefixes := []string{"ansible.builtin.", "ansible.posix.", "community.general."}
+	seen := map[string]int{}
 	for _, ln := range lines {
 		if len(ln) != 78 {
 			t.Fatalf("line is %d characters, want 78: %q", len(ln), ln)
 		}
-		if !strings.HasPrefix(ln, "ansible.builtin.") {
-			t.Fatalf("line does not start with the FQCN: %q", ln)
+		var matched string
+		for _, p := range prefixes {
+			if strings.HasPrefix(ln, p) {
+				matched = p
+				break
+			}
 		}
+		if matched == "" {
+			t.Fatalf("line does not start with a known collection: %q", ln)
+		}
+		seen[matched]++
 		// The summary begins at 59 and the name field is blank-padded.
+		// Real's own longest fully-qualified name is 58 characters
+		// (community.general.keycloak_authentication_required_actions),
+		// so the column holds for every collection, not only the short
+		// builtin names this was first measured against.
 		if ln[58] != ' ' {
 			t.Fatalf("name field is not padded to 59: %q", ln)
 		}
+	}
+	for _, p := range prefixes {
+		if seen[p] == 0 {
+			t.Errorf("no module listed under %s; the attribution is not reaching the listing", p)
+		}
+	}
+	if seen["community.general."] < seen["ansible.builtin."] {
+		t.Errorf("counts look wrong: %d builtin vs %d community.general, "+
+			"and community.general is much the larger share of this registry", seen["ansible.builtin."], seen["community.general."])
 	}
 }
 
@@ -334,5 +361,32 @@ func TestListWithABareNameIsACollectionError(t *testing.T) {
 	errOut.Reset()
 	if code := runWithStreams(t, []string{"-l", "community.general"}, &out, &errOut); code != 0 {
 		t.Errorf("a well-formed collection name exits %d, real exits 0", code)
+	}
+}
+
+// TestPageHeaderNamesTheModulesOwnCollection is the regression this
+// print once got wrong for 514 modules: the header said
+// ansible.builtin for every one of them. It is not a cosmetic bug --
+// modules.NormalizeName strips any known prefix, so the name our own
+// documentation printed ran here and is rejected by real Ansible.
+//
+// Real ansible-core 2.21.4, measured:
+//
+//	> MODULE community.general.rocketchat (.../modules/rocketchat.py)
+//	> MODULE ansible.builtin.copy (.../ansible/modules/copy.py)
+func TestPageHeaderNamesTheModulesOwnCollection(t *testing.T) {
+	for _, tc := range []struct{ module, want string }{
+		{"copy", "> MODULE ansible.builtin.copy\n"},
+		{"rocketchat", "> MODULE community.general.rocketchat\n"},
+		{"synchronize", "> MODULE ansible.posix.synchronize\n"},
+	} {
+		out := captureStdout(t, func() { run([]string{tc.module}) })
+		if !strings.HasPrefix(out, tc.want) {
+			first := out
+			if i := strings.IndexByte(first, '\n'); i >= 0 {
+				first = first[:i]
+			}
+			t.Errorf("%s header = %q, want %q", tc.module, first, strings.TrimRight(tc.want, "\n"))
+		}
 	}
 }
