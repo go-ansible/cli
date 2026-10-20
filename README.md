@@ -3,6 +3,10 @@
 CLI binaries: ansible-playbook, ansible, ansible-inventory, ansible-vault,
 ansible-galaxy, ansible-pull, ansible-doc, ansible-config, ansible-console.
 
+Nine of the ten console scripts real `ansible-core` 2.21.4 declares in its own
+`entry_points.txt`. The tenth is `ansible-test`, which drives collection test
+suites against collections this port does not host.
+
 Part of [go-ansible](https://github.com/go-ansible) — a pure-Go (CGO=0),
 functional-parity port of [Ansible](https://www.ansible.com/).
 
@@ -48,6 +52,25 @@ published manifest:
 $ docker manifest inspect ghcr.io/go-ansible/cli | grep architecture
 amd64  arm64  loong64  ppc64le  riscv64  s390x
 ```
+
+## `ansible-doc` names the module's own collection
+
+A page header and a `-l` line carry the collection the module really comes
+from, as real prints it:
+
+```sh
+$ ansible-doc rocketchat
+> MODULE community.general.rocketchat
+$ ansible-doc synchronize
+> MODULE ansible.posix.synchronize
+```
+
+It printed `ansible.builtin.` for every module until v0.143.0, on a premise
+that was true when written and wrong for 514 of the 576 registered modules.
+Worth stating because it was not cosmetic: `modules.NormalizeName` strips any
+known collection prefix, so `ansible.builtin.rocketchat` *ran here* and real
+Ansible rejects it — this port's own documentation was handing out a name that
+works nowhere else, and nothing local could catch that.
 
 **Known limitation**: `command`/`shell` tasks against a `local`
 connection need `/bin/sh`, which doesn't exist in a scratch image —
