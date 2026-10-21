@@ -4,12 +4,12 @@ go 1.27.1
 
 require (
 	github.com/go-ansible/inventory v0.19.3
-	github.com/go-ansible/modules v0.89.0
-	github.com/go-ansible/playbook v0.143.0
+	github.com/go-ansible/modules v0.89.1
+	github.com/go-ansible/playbook v0.143.1
 	github.com/go-ansible/template v0.33.2
 	github.com/go-ansible/vault v0.9.2
 	github.com/go-git/go-git/v5 v5.19.3
-	github.com/go-remoteexec/transport v0.8.0
+	github.com/go-remoteexec/transport v0.8.1
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
