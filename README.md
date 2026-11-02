@@ -53,6 +53,42 @@ $ docker manifest inspect ghcr.io/go-ansible/cli | grep architecture
 amd64  arm64  loong64  ppc64le  riscv64  s390x
 ```
 
+## `ansible-playbook --compat-report`
+
+This port's own flag, not one real has. It answers the question that makes
+people keep old Python virtualenvs around — not "does this playbook run"
+but "what in it stopped running, and what replaces it":
+
+```sh
+$ ansible-playbook --compat-report legacy.yml
+playbook: legacy.yml
+  2:3: play keyword "sudo": use `become: true`
+  3:3: play keyword "sudo_user": use `become_user:`
+  17:7: task keyword "always_run": use `check_mode: false` — it is the same
+        meaning with the polarity flipped
+  19:7: task keyword "include": use `import_tasks:` for a file to pull in at
+        parse time, or `include_tasks:` for one chosen while the play runs
+
+4 item(s) will not run as written.
+$ echo $?
+4
+```
+
+It exits 4 when it finds anything — the same status both implementations
+give a playbook that will not run — so a pipeline can gate on it, 0 when
+there is nothing, and 1 when the playbook could not be read at all,
+because "I could not look" must not read as "there is nothing wrong".
+
+It runs before the parse, which is the point: a playbook carrying a
+retired keyword does not parse, here or in real, so a report that needed
+a parsed playbook would be silent in the one case it is for. It reaches
+no host, loads no inventory, and decrypts a vaulted playbook first.
+
+The replacement advice comes from `playbook.CompatScan`, whose table was
+measured against ansible-core 2.21.4 rather than taken from a changelog.
+What it deliberately does not say is the version each keyword went away
+in: the reference does not ship that history.
+
 ## `ansible-doc` names the module's own collection
 
 A page header and a `-l` line carry the collection the module really comes

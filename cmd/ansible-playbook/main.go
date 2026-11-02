@@ -67,6 +67,14 @@ func run(args []string) int {
 	fs.BoolVar(&inspectFlags.listTags, "list-tags", false, "list all available tags")
 	fs.BoolVar(&inspectFlags.listHosts, "list-hosts", false, "outputs a list of matching hosts")
 	fs.BoolVar(&inspectFlags.syntaxCheck, "syntax-check", false, "perform a syntax check on the playbook, but do not execute it")
+	// --compat-report is this port's own flag, not one real has. It
+	// answers the question that makes people keep old Python virtualenvs
+	// around: not "does this playbook run" but "what in it stopped
+	// running, and what replaces it". It exits 4 when it finds anything,
+	// the same status both implementations give a playbook that will not
+	// run, so a pipeline can gate on it.
+	compatReport := fs.Bool("compat-report", false,
+		"report the constructs in a playbook that no current Ansible will run, and what to write instead; exit 4 if any (go-ansible only)")
 	limit := fs.String("limit", "", "further limit selected hosts to an additional pattern (also -l)")
 	fs.StringVar(limit, "l", "", "further limit selected hosts to an additional pattern")
 	diffMode := fs.Bool("diff", false, "when changing any file, show the differences (also -D)")
@@ -122,6 +130,17 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "[ERROR]:", err)
 			return 1
 		}
+	}
+
+	// --compat-report comes BEFORE the inventory and before the parse.
+	// Before the parse because that is the whole point: a playbook
+	// carrying a retired keyword does not parse, here or in real, so a
+	// report that ran after parsing would be silent in the one case it
+	// is for. Before the inventory because it reaches no host and
+	// resolves no pattern, and loading one printed two warnings about
+	// an implicit localhost that nothing was ever going to connect to.
+	if *compatReport {
+		return compatReportRun(os.Stdout, os.Stderr, playbooks, vaultPassword)
 	}
 
 	// An unusable inventory is a warning, not a failure — see invload.
