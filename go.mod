@@ -4,13 +4,13 @@ go 1.27.3
 
 require (
 	github.com/go-ansible/inventory v0.19.3
-	github.com/go-ansible/modules v0.99.0
-	github.com/go-ansible/playbook v0.148.0
+	github.com/go-ansible/modules v0.101.0
+	github.com/go-ansible/playbook v0.154.0
 	github.com/go-ansible/template v0.33.2
 	github.com/go-ansible/vault v0.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-remoteexec/transport v0.8.1
-	golang.org/x/term v0.47.0
+	golang.org/x/term v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -46,7 +46,7 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
